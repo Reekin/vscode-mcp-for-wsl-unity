@@ -149,42 +149,47 @@ async function refreshAllFiles() {
 
 async function refreshProject() {
     try {
-        // 刷新文件资源管理器
+        log('开始刷新整个项目...');
+        
+        // 1. 刷新文件资源管理器
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
         
-        // 刷新所有已打开的文档（包括未显示的）
+        // 2. 刷新所有已打开的文档
         await refreshAllFiles();
         
-        // 如果有工作区文件夹，遍历并刷新所有文件
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (workspaceFolders) {
-            let refreshedCount = 0;
-            for (const folder of workspaceFolders) {
-                const files = await vscode.workspace.findFiles(
-                    new vscode.RelativePattern(folder, '**/*'),
-                    '**/node_modules/**'
-                );
-                
-                for (const fileUri of files) {
-                    try {
-                        // 如果文件已经在编辑器中打开，刷新它
-                        const document = vscode.workspace.textDocuments.find(doc => 
-                            doc.uri.toString() === fileUri.toString()
-                        );
-                        if (document) {
-                            await vscode.commands.executeCommand('workbench.action.files.revert', fileUri);
-                            refreshedCount++;
-                        }
-                    } catch (error) {
-                        // 忽略单个文件的刷新错误
-                    }
-                }
-            }
-            
-            log(`已刷新整个项目，包含 ${refreshedCount} 个文件`);
-        } else {
-            log('已刷新项目（无工作区文件夹）');
+        // 3. 触发各语言服务器重新加载项目
+        try {
+            await vscode.commands.executeCommand('typescript.reloadProjects');
+        } catch (e) {
+            // TypeScript服务器可能不存在，忽略错误
         }
+        
+        try {
+            await vscode.commands.executeCommand('python.reloadProjects');
+        } catch (e) {
+            // Python服务器可能不存在，忽略错误
+        }
+        
+        // Unity/C# 相关服务器重新加载
+        try {
+            await vscode.commands.executeCommand('omnisharp.restartServer');
+        } catch (e) {
+            // OmniSharp可能不存在，忽略错误
+        }
+        
+        try {
+            await vscode.commands.executeCommand('csharp.reloadProjects');
+        } catch (e) {
+            // C#服务器可能不存在，忽略错误
+        }
+        
+        try {
+            await vscode.commands.executeCommand('dotnet.restore');
+        } catch (e) {
+            // dotnet可能不存在，忽略错误
+        }
+        
+        log('项目刷新完成');
         
     } catch (error) {
         log(`刷新项目失败: ${error instanceof Error ? error.message : String(error)}`);

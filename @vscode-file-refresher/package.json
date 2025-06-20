@@ -1,0 +1,59 @@
+{
+  "name": "vscode-file-refresher",
+  "displayName": "VSCode File Refresher",
+  "description": "接收外部通知并主动刷新文件状态，解决WSL文件监听延迟问题",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["wsl", "file-watcher", "refresh", "diagnostics"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fileRefresher.start",
+        "title": "启动文件刷新服务器"
+      },
+      {
+        "command": "fileRefresher.stop", 
+        "title": "停止文件刷新服务器"
+      },
+      {
+        "command": "fileRefresher.refreshAll",
+        "title": "刷新所有打开的文件"
+      }
+    ],
+    "configuration": {
+      "title": "File Refresher",
+      "properties": {
+        "fileRefresher.port": {
+          "type": "number",
+          "default": 8790,
+          "description": "HTTP服务器端口"
+        },
+        "fileRefresher.autoStart": {
+          "type": "boolean", 
+          "default": true,
+          "description": "启动时自动开启服务器"
+        },
+        "fileRefresher.enableLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用详细日志"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}

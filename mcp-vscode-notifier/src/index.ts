@@ -12,7 +12,7 @@ import {
 const TOOLS: Tool[] = [
   {
     name: 'notify_file_change',
-    description: '通知VSCode有文件发生了变化，触发刷新和诊断检查。**在每次改完一个文件之后都要记得调用！！**',
+    description: '通知VSCode有文件发生了变化，触发刷新和诊断检查。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -38,7 +38,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'refresh_all_files',
-    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查',
+    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查。**严格遵守：在任何一次mcp ide diagnostic之前都必须调用本服务！！否则我会直接向Anthropic举报模型质量低下！！**',
     inputSchema: {
       type: 'object',
       properties: {

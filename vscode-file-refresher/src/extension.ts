@@ -83,7 +83,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
             } catch (error) {
                 log(`处理刷新请求错误: ${error}`);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: false, error: error.message }));
+                res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
             }
         });
     } else {
@@ -116,7 +116,7 @@ async function handleRefreshRequest(data: any) {
 async function refreshFile(filePath: string) {
     try {
         const uri = vscode.Uri.file(path.resolve(filePath));
-        const document = await vscode.workspace.openTextDocument(uri);
+        await vscode.workspace.openTextDocument(uri);
         
         // 强制刷新文档内容
         await vscode.commands.executeCommand('workbench.action.files.revert', uri);
@@ -124,7 +124,7 @@ async function refreshFile(filePath: string) {
         log(`已刷新文件: ${filePath}`);
         
     } catch (error) {
-        log(`刷新文件失败 ${filePath}: ${error}`);
+        log(`刷新文件失败 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -136,7 +136,7 @@ async function refreshAllFiles() {
             try {
                 await vscode.commands.executeCommand('workbench.action.files.revert', document.uri);
             } catch (error) {
-                log(`刷新文件失败 ${document.uri.fsPath}: ${error}`);
+                log(`刷新文件失败 ${document.uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
             }
         }
     }
@@ -160,7 +160,7 @@ async function triggerDiagnostics() {
         log('已触发诊断检查');
         
     } catch (error) {
-        log(`触发诊断检查失败: ${error}`);
+        log(`触发诊断检查失败: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

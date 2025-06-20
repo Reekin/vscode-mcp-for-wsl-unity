@@ -6,7 +6,7 @@
 
 1. 进入插件目录并安装依赖：
 ```bash
-cd @vscode-file-refresher
+cd vscode-file-refresher
 npm install
 ```
 
@@ -22,7 +22,7 @@ npm run compile
 
 ### 方法2：开发模式运行
 
-1. 在VSCode中打开 `@vscode-file-refresher` 文件夹
+1. 在VSCode中打开 `vscode-file-refresher` 文件夹
 2. 按 `F5` 启动调试模式
 3. 在新窗口中测试插件功能
 
@@ -32,7 +32,7 @@ npm run compile
 
 1. 进入MCP服务器目录：
 ```bash
-cd @mcp-vscode-notifier
+cd mcp-vscode-notifier
 npm install
 ```
 
@@ -54,7 +54,7 @@ npm run build
   "mcpServers": {
     "vscode-notifier": {
       "command": "node",
-      "args": ["/mnt/i/gpt-projects/vscode-wsl-filewatcher/@mcp-vscode-notifier/dist/index.js"]
+      "args": ["/mnt/i/gpt-projects/vscode-wsl-filewatcher/mcp-vscode-notifier/dist/index.js"]
     }
   }
 }

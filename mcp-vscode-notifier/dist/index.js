@@ -6,7 +6,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextpro
 const TOOLS = [
     {
         name: 'notify_file_change',
-        description: '通知VSCode有文件发生了变化，触发刷新和诊断检查',
+        description: '通知VSCode有文件发生了变化，触发刷新和诊断检查。**在每次改完一个文件之后都要记得调用！！**',
         inputSchema: {
             type: 'object',
             properties: {

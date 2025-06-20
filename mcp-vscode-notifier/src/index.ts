@@ -12,7 +12,7 @@ import {
 const TOOLS: Tool[] = [
   {
     name: 'notify_file_change',
-    description: '通知VSCode有文件发生了变化，触发刷新和诊断检查',
+    description: '通知VSCode有文件发生了变化，触发刷新和诊断检查。**在每次改完一个文件之后都要记得调用！！**',
     inputSchema: {
       type: 'object',
       properties: {
@@ -38,7 +38,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'refresh_all_files',
-    description: '刷新VSCode中所有打开的文件并触发诊断检查',
+    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查',
     inputSchema: {
       type: 'object',
       properties: {
@@ -132,14 +132,14 @@ class VSCodeNotifierServer {
     const { vscode_port = 8790 } = args;
 
     const result = await this.sendNotificationToVSCode({
-      action: 'refresh',
+      action: 'refresh_project',
     }, vscode_port);
 
     return {
       content: [
         {
           type: 'text',
-          text: `已通知VSCode刷新所有打开的文件\n\n响应: ${result.message}`,
+          text: `已通知VSCode刷新整个项目\n\n响应: ${result.message}`,
         },
       ],
     };

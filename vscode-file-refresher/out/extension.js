@@ -96,6 +96,10 @@ async function handleRefreshRequest(data) {
             await refreshAllFiles();
         }
     }
+    else if (action === 'refresh_project') {
+        // 刷新整个项目
+        await refreshProject();
+    }
     // 触发诊断检查
     await triggerDiagnostics();
 }
@@ -124,6 +128,42 @@ async function refreshAllFiles() {
         }
     }
     log(`已刷新 ${openDocuments.length} 个打开的文件`);
+}
+async function refreshProject() {
+    try {
+        // 刷新文件资源管理器
+        await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+        // 刷新所有已打开的文档（包括未显示的）
+        await refreshAllFiles();
+        // 如果有工作区文件夹，遍历并刷新所有文件
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders) {
+            let refreshedCount = 0;
+            for (const folder of workspaceFolders) {
+                const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'), '**/node_modules/**');
+                for (const fileUri of files) {
+                    try {
+                        // 如果文件已经在编辑器中打开，刷新它
+                        const document = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === fileUri.toString());
+                        if (document) {
+                            await vscode.commands.executeCommand('workbench.action.files.revert', fileUri);
+                            refreshedCount++;
+                        }
+                    }
+                    catch (error) {
+                        // 忽略单个文件的刷新错误
+                    }
+                }
+            }
+            log(`已刷新整个项目，包含 ${refreshedCount} 个文件`);
+        }
+        else {
+            log('已刷新项目（无工作区文件夹）');
+        }
+    }
+    catch (error) {
+        log(`刷新项目失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 async function triggerDiagnostics() {
     try {

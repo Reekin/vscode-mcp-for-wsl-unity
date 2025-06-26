@@ -4,6 +4,7 @@ exports.deactivate = exports.activate = void 0;
 const vscode = require("vscode");
 const http = require("http");
 const path = require("path");
+const net = require("net");
 let server = null;
 let outputChannel;
 function activate(context) {
@@ -131,35 +132,59 @@ async function refreshAllFiles() {
 }
 async function refreshProject() {
     try {
-        // 刷新文件资源管理器
+        log('开始刷新整个项目...');
+        // 1. 刷新文件资源管理器
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
-        // 刷新所有已打开的文档（包括未显示的）
+        // 2. 刷新所有已打开的文档
         await refreshAllFiles();
-        // 如果有工作区文件夹，遍历并刷新所有文件
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (workspaceFolders) {
-            let refreshedCount = 0;
-            for (const folder of workspaceFolders) {
-                const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'), '**/node_modules/**');
-                for (const fileUri of files) {
-                    try {
-                        // 如果文件已经在编辑器中打开，刷新它
-                        const document = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === fileUri.toString());
-                        if (document) {
-                            await vscode.commands.executeCommand('workbench.action.files.revert', fileUri);
-                            refreshedCount++;
-                        }
-                    }
-                    catch (error) {
-                        // 忽略单个文件的刷新错误
-                    }
-                }
-            }
-            log(`已刷新整个项目，包含 ${refreshedCount} 个文件`);
+        // 3. 触发各语言服务器重新加载项目
+        try {
+            await vscode.commands.executeCommand('typescript.reloadProjects');
         }
-        else {
-            log('已刷新项目（无工作区文件夹）');
+        catch (e) {
+            // TypeScript服务器可能不存在，忽略错误
         }
+        try {
+            await vscode.commands.executeCommand('python.reloadProjects');
+        }
+        catch (e) {
+            // Python服务器可能不存在，忽略错误
+        }
+        // Unity/C# 相关服务器重新加载
+        try {
+            await vscode.commands.executeCommand('omnisharp.restartServer');
+        }
+        catch (e) {
+            // OmniSharp可能不存在，忽略错误
+        }
+        try {
+            await vscode.commands.executeCommand('csharp.reloadProjects');
+        }
+        catch (e) {
+            // C#服务器可能不存在，忽略错误
+        }
+        try {
+            await vscode.commands.executeCommand('dotnet.restore');
+        }
+        catch (e) {
+            // dotnet可能不存在，忽略错误
+        }
+        // 4. 通知Unity执行project_files_refresher
+        try {
+            await notifyUnityProjectFilesRefresher();
+        }
+        catch (e) {
+            log(`Unity project_files_refresher通知失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        // 5. 重启dotnet服务器
+        try {
+            await vscode.commands.executeCommand('dotnet.restartServer');
+            log('已重启dotnet服务器');
+        }
+        catch (e) {
+            log(`重启dotnet服务器失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        log('项目刷新完成');
     }
     catch (error) {
         log(`刷新项目失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -181,6 +206,54 @@ async function triggerDiagnostics() {
     catch (error) {
         log(`触发诊断检查失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+async function notifyUnityProjectFilesRefresher() {
+    const config = vscode.workspace.getConfiguration('fileRefresher');
+    const unityMcpPort = config.get('unityMcpPort', 6400);
+    const unityMcpHost = config.get('unityMcpHost', '192.168.80.1'); // WSL访问Windows的默认网关
+    return new Promise((resolve, reject) => {
+        const socket = new net.Socket();
+        socket.setTimeout(5000); // 5秒超时
+        const command = {
+            type: 'project_files_refresher',
+            params: {}
+        };
+        const commandJson = JSON.stringify(command);
+        socket.connect(unityMcpPort, unityMcpHost, () => {
+            log(`已连接到Unity MCP Bridge (${unityMcpHost}:${unityMcpPort})`);
+            socket.write(commandJson);
+        });
+        socket.on('data', (data) => {
+            try {
+                const response = JSON.parse(data.toString());
+                log(`Unity MCP响应: ${JSON.stringify(response)}`);
+                if (response.status === 'success') {
+                    log('Unity project_files_refresher执行成功');
+                    resolve();
+                }
+                else {
+                    reject(new Error(`Unity MCP错误: ${response.error || '未知错误'}`));
+                }
+            }
+            catch (error) {
+                log(`解析Unity MCP响应失败: ${error instanceof Error ? error.message : String(error)}`);
+                reject(error);
+            }
+            socket.destroy();
+        });
+        socket.on('error', (error) => {
+            log(`Unity MCP连接错误: ${error.message}`);
+            reject(error);
+        });
+        socket.on('timeout', () => {
+            log('Unity MCP连接超时');
+            socket.destroy();
+            reject(new Error('Unity MCP连接超时'));
+        });
+        socket.on('close', () => {
+            log('Unity MCP连接已关闭');
+        });
+    });
 }
 function log(message) {
     const config = vscode.workspace.getConfiguration('fileRefresher');

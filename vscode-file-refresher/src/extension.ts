@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as http from 'http';
 import * as path from 'path';
+import * as net from 'net';
 
 let server: http.Server | null = null;
 let outputChannel: vscode.OutputChannel;
@@ -189,6 +190,21 @@ async function refreshProject() {
             // dotnet可能不存在，忽略错误
         }
         
+        // 4. 通知Unity执行project_files_refresher
+        try {
+            await notifyUnityProjectFilesRefresher();
+        } catch (e) {
+            log(`Unity project_files_refresher通知失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        
+        // 5. 重启dotnet服务器
+        try {
+            await vscode.commands.executeCommand('dotnet.restartServer');
+            log('已重启dotnet服务器');
+        } catch (e) {
+            log(`重启dotnet服务器失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        
         log('项目刷新完成');
         
     } catch (error) {
@@ -214,6 +230,62 @@ async function triggerDiagnostics() {
     } catch (error) {
         log(`触发诊断检查失败: ${error instanceof Error ? error.message : String(error)}`);
     }
+}
+
+async function notifyUnityProjectFilesRefresher() {
+    const config = vscode.workspace.getConfiguration('fileRefresher');
+    const unityMcpPort = config.get('unityMcpPort', 6400);
+    const unityMcpHost = config.get('unityMcpHost', '192.168.80.1'); // WSL访问Windows的默认网关
+    
+    return new Promise<void>((resolve, reject) => {
+        const socket = new net.Socket();
+        socket.setTimeout(5000); // 5秒超时
+        
+        const command = {
+            type: 'project_files_refresher',
+            params: {}
+        };
+        
+        const commandJson = JSON.stringify(command);
+        
+        socket.connect(unityMcpPort, unityMcpHost, () => {
+            log(`已连接到Unity MCP Bridge (${unityMcpHost}:${unityMcpPort})`);
+            socket.write(commandJson);
+        });
+        
+        socket.on('data', (data) => {
+            try {
+                const response = JSON.parse(data.toString());
+                log(`Unity MCP响应: ${JSON.stringify(response)}`);
+                
+                if (response.status === 'success') {
+                    log('Unity project_files_refresher执行成功');
+                    resolve();
+                } else {
+                    reject(new Error(`Unity MCP错误: ${response.error || '未知错误'}`));
+                }
+            } catch (error) {
+                log(`解析Unity MCP响应失败: ${error instanceof Error ? error.message : String(error)}`);
+                reject(error);
+            }
+            socket.destroy();
+        });
+        
+        socket.on('error', (error) => {
+            log(`Unity MCP连接错误: ${error.message}`);
+            reject(error);
+        });
+        
+        socket.on('timeout', () => {
+            log('Unity MCP连接超时');
+            socket.destroy();
+            reject(new Error('Unity MCP连接超时'));
+        });
+        
+        socket.on('close', () => {
+            log('Unity MCP连接已关闭');
+        });
+    });
 }
 
 function log(message: string) {

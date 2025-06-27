@@ -77,7 +77,7 @@ npm run build
 
 ```bash
 # 测试刷新所有文件
-refresh_all_files()
+refresh_project()
 ```
 
 ## 4. 验证安装
@@ -88,7 +88,7 @@ refresh_all_files()
 
 2. **测试项目刷新：**
    - 修改项目中的文件
-   - 使用refresh_all_files工具刷新项目
+   - 使用refresh_project工具刷新项目
    - 观察语法检查是否立即更新
 
 ## 5. 故障排除

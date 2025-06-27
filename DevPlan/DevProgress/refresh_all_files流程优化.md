@@ -1,12 +1,12 @@
-# refresh_all_files流程优化任务
+# refresh_project流程优化任务
 
 ## 任务描述
-在refresh_all_files流程的最后加入：
+在refresh_project流程的最后加入：
 1. 通知Unity执行project_files_refresher（通信参考 UnityMcpBridge/）
 2. 然后执行 `await vscode.commands.executeCommand('dotnet.restartServer')`
 
 ## 技术分析
-- 目前的refresh_all_files流程在refreshProject()函数中
+- 目前的refresh_project流程在refreshProject()函数中
 - 需要添加HTTP请求调用Unity MCP Server的project_files_refresher工具
 - Unity MCP通信端口需要确认（可能是固定端口或配置端口）
 - 添加dotnet.restartServer命令执行

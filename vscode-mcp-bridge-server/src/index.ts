@@ -11,11 +11,18 @@ import {
 // VSCode通知工具定义
 const TOOLS: Tool[] = [
   {
-    name: 'refresh_all_files',
-    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查。**严格遵守：在任何一次mcp ide diagnostic之前都必须调用本服务！！否则我会直接向Anthropic举报模型质量低下！！**',
+    name: 'refresh_project',
+    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查。**ALWAYS**在任何一次mcp ide diagnostic之前都必须调用本服务！！',
     inputSchema: {
       type: 'object',
       properties: {
+        files: {
+          type: 'array',
+          items: {
+            type: 'string'
+          },
+          description: '要刷新的文件路径列表。如果为空或未提供，则刷新所有打开的文件',
+        },
         vscode_port: {
           type: 'number',
           default: 8790,
@@ -86,8 +93,8 @@ class VSCodeNotifierServer {
 
       try {
         switch (name) {
-          case 'refresh_all_files':
-            return await this.handleRefreshAllFiles(args);
+          case 'refresh_project':
+            return await this.handleRefreshProject(args);
           case 'goto_symbol_definition':
             return await this.handleGotoSymbolDefinition(args);
           default:
@@ -107,18 +114,23 @@ class VSCodeNotifierServer {
     });
   }
 
-  private async handleRefreshAllFiles(args: any) {
-    const { vscode_port = 8790 } = args;
+  private async handleRefreshProject(args: any) {
+    const { files, vscode_port = 8790 } = args;
 
     const result = await this.sendNotificationToVSCode({
       action: 'refresh_project',
+      files,
     }, vscode_port);
+
+    const fileInfo = files && files.length > 0 
+      ? `指定文件 (${files.length}个): ${files.join(', ')}` 
+      : '全部文件';
 
     return {
       content: [
         {
           type: 'text',
-          text: `已通知VSCode刷新整个项目\n\n响应: ${result.message}`,
+          text: `已通知VSCode刷新项目\n刷新范围: ${fileInfo}\n\n响应: ${result.message}`,
         },
       ],
     };
@@ -149,7 +161,7 @@ class VSCodeNotifierServer {
   }
 
   private async sendNotificationToVSCode(payload: any, port: number): Promise<any> {
-    const url = `http://localhost:${port}/refresh`;
+    const url = `http://localhost:${port}/bridge`;
     
     try {
       const response = await fetch(url, {
@@ -169,8 +181,8 @@ class VSCodeNotifierServer {
     } catch (error) {
       if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
         throw new Error(
-          `无法连接到VSCode File Refresher插件 (端口 ${port})。请确保:\n` +
-          '1. VSCode已安装并启用File Refresher插件\n' +
+          `无法连接到VSCode MCP Bridge插件 (端口 ${port})。请确保:\n` +
+          '1. VSCode已安装并启用MCP Bridge插件\n' +
           '2. 插件服务器已启动\n' +
           '3. 端口号配置正确'
         );
@@ -182,7 +194,7 @@ class VSCodeNotifierServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('VSCode Notifier MCP server 已启动');
+    console.error('VSCode MCP Bridge server 已启动');
   }
 }
 

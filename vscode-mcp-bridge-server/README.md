@@ -3,7 +3,7 @@
 为AI工具提供通知VSCode文件变化的MCP服务器。
 
 ## 功能
-- `refresh_all_files`: 刷新VSCode中所有打开的文件
+- `refresh_project`: 刷新VSCode中所有打开的文件
 
 ## 安装使用
 
@@ -34,7 +34,7 @@ npm run build
 ```typescript
 
 // 刷新所有打开的文件
-await refresh_all_files({
+await refresh_project({
   "vscode_port": 8790
 });
 ```

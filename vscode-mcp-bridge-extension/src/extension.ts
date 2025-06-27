@@ -70,13 +70,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         return;
     }
     
-    if (req.method === 'POST' && req.url === '/refresh') {
+    if (req.method === 'POST' && req.url === '/bridge') {
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', async () => {
             try {
                 const data = JSON.parse(body);
-                const result = await handleRefreshRequest(data);
+                const result = await handleBridgeRequest(data);
                 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 
@@ -104,7 +104,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 }
 
-async function handleRefreshRequest(data: any) {
+async function handleBridgeRequest(data: any) {
     const { files, action, file_path, line, character } = data;
     
     log(`收到请求: ${action}, 文件: ${files?.join(', ') || file_path || '全部'}`);

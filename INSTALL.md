@@ -75,12 +75,6 @@ npm run build
 重启Claude Code后，你可以使用以下工具：
 
 ```bash
-# 测试通知特定文件变化
-notify_file_change({
-  "files": ["/path/to/your/file.ts"],
-  "action": "both"
-})
-
 # 测试刷新所有文件
 refresh_all_files()
 ```
@@ -91,9 +85,9 @@ refresh_all_files()
    - 查看VSCode状态栏是否显示"File Refresher"
    - 检查输出面板的"File Refresher"频道
 
-2. **测试文件刷新：**
-   - 修改一个文件
-   - 使用MCP工具通知VSCode
+2. **测试项目刷新：**
+   - 修改项目中的文件
+   - 使用refresh_all_files工具刷新项目
    - 观察语法检查是否立即更新
 
 ## 5. 故障排除

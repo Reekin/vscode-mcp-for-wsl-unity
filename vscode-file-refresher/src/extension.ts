@@ -148,6 +148,96 @@ async function refreshAllFiles() {
     log(`已刷新 ${openDocuments.length} 个打开的文件`);
 }
 
+async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise<void> {
+    return new Promise((resolve) => {
+        const startTime = Date.now();
+        let isResolved = false;
+        
+        // 设置超时
+        const timeout = setTimeout(() => {
+            if (!isResolved) {
+                isResolved = true;
+                log('等待dotnet分析完成超时，继续执行...');
+                resolve();
+            }
+        }, timeoutMs);
+        
+        // 监听诊断变化
+        const disposable = vscode.languages.onDidChangeDiagnostics((event) => {
+            if (isResolved) return;
+            
+            // 检查是否有正在分析的诊断信息
+            let hasAnalyzing = false;
+            
+            for (const uri of event.uris) {
+                const diagnostics = vscode.languages.getDiagnostics(uri);
+                for (const diagnostic of diagnostics) {
+                    const message = diagnostic.message.toLowerCase();
+                    // 检查是否包含分析中的关键词
+                    if (message.includes('analyzing') || 
+                        message.includes('loading') ||
+                        message.includes('initializing') ||
+                        message.includes('正在分析') ||
+                        message.includes('正在加载') ||
+                        message.includes('初始化中')) {
+                        hasAnalyzing = true;
+                        break;
+                    }
+                }
+                if (hasAnalyzing) break;
+            }
+            
+            // 如果没有分析中的诊断，且已经过了最小等待时间(2秒)，认为完成
+            if (!hasAnalyzing && (Date.now() - startTime) > 2000) {
+                isResolved = true;
+                clearTimeout(timeout);
+                disposable.dispose();
+                log('检测到dotnet分析完成');
+                resolve();
+            }
+        });
+        
+        // 最小等待时间后开始检查
+        setTimeout(() => {
+            if (isResolved) return;
+            
+            // 如果没有任何分析中的诊断，直接完成
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (workspaceFolders) {
+                let hasAnalyzing = false;
+                
+                // 检查工作区中的所有诊断
+                vscode.workspace.textDocuments.forEach(doc => {
+                    if (doc.languageId === 'csharp') {
+                        const diagnostics = vscode.languages.getDiagnostics(doc.uri);
+                        for (const diagnostic of diagnostics) {
+                            const message = diagnostic.message.toLowerCase();
+                            if (message.includes('analyzing') || 
+                                message.includes('loading') ||
+                                message.includes('initializing') ||
+                                message.includes('正在分析') ||
+                                message.includes('正在加载') ||
+                                message.includes('初始化中')) {
+                                hasAnalyzing = true;
+                                break;
+                            }
+                        }
+                        if (hasAnalyzing) return;
+                    }
+                });
+                
+                if (!hasAnalyzing) {
+                    isResolved = true;
+                    clearTimeout(timeout);
+                    disposable.dispose();
+                    log('初始检查未发现分析中状态，认为已完成');
+                    resolve();
+                }
+            }
+        }, 2000);
+    });
+}
+
 async function refreshProject() {
     try {
         log('开始刷新整个项目...');
@@ -199,10 +289,12 @@ async function refreshProject() {
         
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // 5. 重启dotnet服务器
+        // 5. 重启dotnet服务器并等待分析完成
         try {
             await vscode.commands.executeCommand('dotnet.restartServer');
-            log('已重启dotnet服务器');
+            log('已重启dotnet服务器，等待分析完成...');
+            await waitForDotnetAnalysisComplete();
+            log('dotnet服务器分析完成');
         } catch (e) {
             log(`重启dotnet服务器失败: ${e instanceof Error ? e.message : String(e)}`);
         }
@@ -213,6 +305,7 @@ async function refreshProject() {
         log(`刷新项目失败: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
+
 
 async function triggerDiagnostics() {
     try {

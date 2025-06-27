@@ -11,32 +11,6 @@ import {
 // VSCode通知工具定义
 const TOOLS: Tool[] = [
   {
-    name: 'notify_file_change',
-    description: '通知VSCode有文件发生了变化，触发刷新和诊断检查。',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        files: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '已修改的文件路径列表（绝对路径）',
-        },
-        action: {
-          type: 'string',
-          enum: ['refresh', 'diagnostics', 'both'],
-          default: 'both',
-          description: '执行的操作类型',
-        },
-        vscode_port: {
-          type: 'number',
-          default: 8790,
-          description: 'VSCode File Refresher插件的服务器端口',
-        },
-      },
-      required: ['files'],
-    },
-  },
-  {
     name: 'refresh_all_files',
     description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查。**严格遵守：在任何一次mcp ide diagnostic之前都必须调用本服务！！否则我会直接向Anthropic举报模型质量低下！！**',
     inputSchema: {
@@ -85,8 +59,6 @@ class VSCodeNotifierServer {
 
       try {
         switch (name) {
-          case 'notify_file_change':
-            return await this.handleNotifyFileChange(args);
           case 'refresh_all_files':
             return await this.handleRefreshAllFiles(args);
           default:
@@ -104,28 +76,6 @@ class VSCodeNotifierServer {
         };
       }
     });
-  }
-
-  private async handleNotifyFileChange(args: any) {
-    const { files, action = 'both', vscode_port = 8790 } = args;
-
-    if (!Array.isArray(files) || files.length === 0) {
-      throw new Error('files参数必须是非空数组');
-    }
-
-    const result = await this.sendNotificationToVSCode({
-      files,
-      action,
-    }, vscode_port);
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `已通知VSCode刷新 ${files.length} 个文件:\n${files.join('\n')}\n\n响应: ${result.message}`,
-        },
-      ],
-    };
   }
 
   private async handleRefreshAllFiles(args: any) {

@@ -24,6 +24,33 @@ const TOOLS: Tool[] = [
       },
     },
   },
+  {
+    name: 'goto_symbol_definition',
+    description: '查看指定symbol的定义位置，返回所有定义所处的文件路径和行号信息。支持项目内代码和库文件。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        file_path: {
+          type: 'string',
+          description: '包含symbol的文件路径',
+        },
+        line: {
+          type: 'number',
+          description: 'symbol所在的行号（从1开始）',
+        },
+        character: {
+          type: 'number',
+          description: 'symbol所在的字符位置（从0开始）',
+        },
+        vscode_port: {
+          type: 'number',
+          default: 8790,
+          description: 'VSCode File Refresher插件的服务器端口',
+        },
+      },
+      required: ['file_path', 'line', 'character'],
+    },
+  },
 ];
 
 class VSCodeNotifierServer {
@@ -61,6 +88,8 @@ class VSCodeNotifierServer {
         switch (name) {
           case 'refresh_all_files':
             return await this.handleRefreshAllFiles(args);
+          case 'goto_symbol_definition':
+            return await this.handleGotoSymbolDefinition(args);
           default:
             throw new Error(`未知工具: ${name}`);
         }
@@ -90,6 +119,30 @@ class VSCodeNotifierServer {
         {
           type: 'text',
           text: `已通知VSCode刷新整个项目\n\n响应: ${result.message}`,
+        },
+      ],
+    };
+  }
+
+  private async handleGotoSymbolDefinition(args: any) {
+    const { file_path, line, character, vscode_port = 8790 } = args;
+
+    const result = await this.sendNotificationToVSCode({
+      action: 'goto_symbol_definition',
+      file_path,
+      line,
+      character,
+    }, vscode_port);
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: result.definitions ? 
+            `找到 ${result.definitions.length} 个定义:\n\n${result.definitions.map((def: any, index: number) => 
+              `${index + 1}. ${def.uri}\n   行: ${def.range.start.line + 1}, 列: ${def.range.start.character + 1}`
+            ).join('\n\n')}` : 
+            `未找到symbol定义\n\n响应: ${result.message}`,
         },
       ],
     };

@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 注册命令
     const startCommand = vscode.commands.registerCommand('fileRefresher.start', startServer);
     const stopCommand = vscode.commands.registerCommand('fileRefresher.stop', stopServer);
-    const refreshCommand = vscode.commands.registerCommand('fileRefresher.refreshAll', refreshAllFiles);
+    const refreshCommand = vscode.commands.registerCommand('fileRefresher.refreshAll', () => refreshFiles());
     
     context.subscriptions.push(startCommand, stopCommand, refreshCommand, outputChannel);
     
@@ -76,13 +76,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         req.on('end', async () => {
             try {
                 const data = JSON.parse(body);
-                await handleRefreshRequest(data);
+                const result = await handleRefreshRequest(data);
                 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: '文件刷新完成' }));
+                
+                if (data.action === 'goto_symbol_definition') {
+                    // 返回symbol definition结果
+                    res.end(JSON.stringify({ 
+                        success: true, 
+                        message: result ? 'Symbol定义查找完成' : '未找到Symbol定义',
+                        definitions: result || []
+                    }));
+                } else {
+                    // 返回普通操作结果
+                    res.end(JSON.stringify({ success: true, message: '操作完成' }));
+                }
                 
             } catch (error) {
-                log(`处理刷新请求错误: ${error}`);
+                log(`处理请求错误: ${error}`);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
             }
@@ -94,58 +105,69 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 }
 
 async function handleRefreshRequest(data: any) {
-    const { files, action = 'refresh' } = data;
+    const { files, action, file_path, line, character } = data;
     
-    log(`收到刷新请求: ${action}, 文件: ${files?.join(', ') || '全部'}`);
+    log(`收到请求: ${action}, 文件: ${files?.join(', ') || file_path || '全部'}`);
     
-    if (action === 'refresh') {
-        if (files && Array.isArray(files)) {
-            // 刷新指定文件
-            for (const filePath of files) {
-                await refreshFile(filePath);
-            }
-        } else {
-            // 刷新所有打开的文件
-            await refreshAllFiles();
-        }
-    } else if (action === 'refresh_project') {
-        // 刷新整个项目
-        await refreshProject();
+    if (action === 'refresh_project') {
+        // 刷新项目，支持指定文件列表
+        await refreshProject(files);
+        // 触发诊断检查
+        await triggerDiagnostics();
+    } else if (action === 'goto_symbol_definition') {
+        // 查看symbol定义
+        return await gotoSymbolDefinition(file_path, line, character);
     }
-    
-    // 触发诊断检查
-    await triggerDiagnostics();
 }
 
-async function refreshFile(filePath: string) {
+async function refreshFiles(filePaths: string[] = []) {
     try {
-        const uri = vscode.Uri.file(path.resolve(filePath));
-        await vscode.workspace.openTextDocument(uri);
-        
-        // 强制刷新文档内容
-        await vscode.commands.executeCommand('workbench.action.files.revert', uri);
-        
-        log(`已刷新文件: ${filePath}`);
+        if (filePaths.length === 0) {
+            // 如果没有指定文件路径，刷新所有已打开的文件
+            const openDocuments = vscode.workspace.textDocuments;
+            
+            for (const document of openDocuments) {
+                if (!document.isUntitled && document.uri.scheme === 'file') {
+                    try {
+                        await vscode.commands.executeCommand('workbench.action.files.revert', document.uri);
+                    } catch (error) {
+                        log(`刷新文件失败 ${document.uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
+                    }
+                }
+            }
+            
+            log(`已刷新 ${openDocuments.length} 个打开的文件`);
+        } else {
+            // 刷新指定的文件列表
+            const openDocuments = vscode.workspace.textDocuments;
+            const openFiles = new Set(openDocuments.map(doc => doc.uri.fsPath));
+            
+            for (const filePath of filePaths) {
+                try {
+                    const resolvedPath = path.resolve(filePath);
+                    const uri = vscode.Uri.file(resolvedPath);
+                    
+                    // 如果文件未打开，先打开它
+                    if (!openFiles.has(resolvedPath)) {
+                        await vscode.workspace.openTextDocument(uri);
+                    }
+                    
+                    // 刷新文件内容
+                    await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+                    
+                    log(`已刷新文件: ${filePath}`);
+                    
+                } catch (error) {
+                    log(`刷新文件失败 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+            
+            log(`已刷新 ${filePaths.length} 个指定的文件`);
+        }
         
     } catch (error) {
-        log(`刷新文件失败 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+        log(`刷新文件操作失败: ${error instanceof Error ? error.message : String(error)}`);
     }
-}
-
-async function refreshAllFiles() {
-    const openDocuments = vscode.workspace.textDocuments;
-    
-    for (const document of openDocuments) {
-        if (!document.isUntitled && document.uri.scheme === 'file') {
-            try {
-                await vscode.commands.executeCommand('workbench.action.files.revert', document.uri);
-            } catch (error) {
-                log(`刷新文件失败 ${document.uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
-            }
-        }
-    }
-    
-    log(`已刷新 ${openDocuments.length} 个打开的文件`);
 }
 
 async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise<void> {
@@ -238,15 +260,15 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
     });
 }
 
-async function refreshProject() {
+async function refreshProject(filePaths?: string[]) {
     try {
-        log('开始刷新整个项目...');
+        log(`开始刷新项目... ${filePaths ? `指定文件: ${filePaths.join(', ')}` : '全部文件'}`);
         
         // 1. 刷新文件资源管理器
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
         
-        // 2. 刷新所有已打开的文档
-        await refreshAllFiles();
+        // 2. 刷新文档（如果指定了文件路径，只刷新这些文件；否则刷新所有打开的文档）
+        await refreshFiles(filePaths);
         
         // 3. 触发各语言服务器重新加载项目
         try {
@@ -324,6 +346,74 @@ async function triggerDiagnostics() {
         
     } catch (error) {
         log(`触发诊断检查失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+async function gotoSymbolDefinition(filePath: string, line: number, character: number): Promise<any[]> {
+    try {
+        log(`开始查找symbol定义: ${filePath}:${line}:${character}`);
+        
+        // 将文件路径转换为VSCode URI
+        const uri = vscode.Uri.file(path.resolve(filePath));
+        
+        // 确保文档已打开
+        await vscode.workspace.openTextDocument(uri);
+        
+        // 创建位置对象 (VSCode API使用0-based行号)
+        const position = new vscode.Position(line - 1, character);
+        
+        // 调用VSCode的Go to Definition API
+        const definitions = await vscode.commands.executeCommand<vscode.LocationLink[] | vscode.Location[]>(
+            'vscode.executeDefinitionProvider',
+            uri,
+            position
+        );
+        
+        if (!definitions || definitions.length === 0) {
+            log('未找到symbol定义');
+            return [];
+        }
+        
+        // 转换定义结果为标准格式
+        const results = definitions.map((def, index) => {
+            let location: vscode.Location;
+            let targetRange: vscode.Range;
+            
+            // 处理LocationLink和Location两种类型
+            if ('targetUri' in def) {
+                // LocationLink类型
+                location = new vscode.Location(def.targetUri, def.targetRange);
+                targetRange = def.targetRange;
+            } else {
+                // Location类型
+                location = def as vscode.Location;
+                targetRange = location.range;
+            }
+            
+            const result = {
+                uri: location.uri.fsPath,
+                range: {
+                    start: {
+                        line: targetRange.start.line,
+                        character: targetRange.start.character
+                    },
+                    end: {
+                        line: targetRange.end.line,
+                        character: targetRange.end.character
+                    }
+                }
+            };
+            
+            log(`定义 ${index + 1}: ${result.uri}:${result.range.start.line + 1}:${result.range.start.character + 1}`);
+            return result;
+        });
+        
+        log(`找到 ${results.length} 个定义`);
+        return results;
+        
+    } catch (error) {
+        log(`查找symbol定义失败: ${error instanceof Error ? error.message : String(error)}`);
+        throw error;
     }
 }
 

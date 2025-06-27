@@ -13,6 +13,7 @@ npm install
 2. 编译插件：
 ```bash
 npm run compile
+vsce package
 ```
 
 3. 在VSCode中安装：

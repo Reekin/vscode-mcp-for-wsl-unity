@@ -176,6 +176,7 @@ async function refreshProject() {
         catch (e) {
             log(`Unity project_files_refresher通知失败: ${e instanceof Error ? e.message : String(e)}`);
         }
+        await new Promise(resolve => setTimeout(resolve, 1000));
         // 5. 重启dotnet服务器
         try {
             await vscode.commands.executeCommand('dotnet.restartServer');

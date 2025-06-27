@@ -8,11 +8,11 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 
-// VSCode通知工具定义
+// VSCode notification tools definition
 const TOOLS: Tool[] = [
   {
     name: 'refresh_project',
-    description: '刷新VSCode中的整个项目（包括所有文件和文件夹）并触发诊断检查。**ALWAYS**在任何一次mcp ide diagnostic之前都必须调用本服务！！',
+    description: 'Refresh the project in VSCode and trigger diagnostic checks. Since modifications made via command line in WSL are often not immediately detected by the editor, manual refresh is needed through this tool. **ALWAYS** call this tool before any mcp ide diagnostic!',
     inputSchema: {
       type: 'object',
       properties: {
@@ -21,38 +21,28 @@ const TOOLS: Tool[] = [
           items: {
             type: 'string'
           },
-          description: '要刷新的文件路径列表。如果为空或未提供，则刷新所有打开的文件',
-        },
-        vscode_port: {
-          type: 'number',
-          default: 8790,
-          description: 'VSCode File Refresher插件的服务器端口',
+          description: 'List of file paths to refresh. If empty or not provided, refresh all open files',
         },
       },
     },
   },
   {
     name: 'goto_symbol_definition',
-    description: '查看指定symbol的定义位置，返回所有定义所处的文件路径和行号信息。支持项目内代码和库文件。',
+    description: 'View the definition location of a specified symbol, returning all definition file paths and line number information. Supports both project code and library files.',
     inputSchema: {
       type: 'object',
       properties: {
         file_path: {
           type: 'string',
-          description: '包含symbol的文件路径',
+          description: 'File path containing the symbol',
         },
         line: {
           type: 'number',
-          description: 'symbol所在的行号（从1开始）',
+          description: 'Line number where the symbol is located (1-based)',
         },
         character: {
           type: 'number',
-          description: 'symbol所在的字符位置（从0开始）',
-        },
-        vscode_port: {
-          type: 'number',
-          default: 8790,
-          description: 'VSCode File Refresher插件的服务器端口',
+          description: 'Character position where the symbol is located (0-based)',
         },
       },
       required: ['file_path', 'line', 'character'],
@@ -98,7 +88,7 @@ class VSCodeNotifierServer {
           case 'goto_symbol_definition':
             return await this.handleGotoSymbolDefinition(args);
           default:
-            throw new Error(`未知工具: ${name}`);
+            throw new Error(`Unknown tool: ${name}`);
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -106,7 +96,7 @@ class VSCodeNotifierServer {
           content: [
             {
               type: 'text',
-              text: `错误: ${errorMessage}`,
+              text: `Error: ${errorMessage}`,
             },
           ],
         };
@@ -115,7 +105,8 @@ class VSCodeNotifierServer {
   }
 
   private async handleRefreshProject(args: any) {
-    const { files, vscode_port = 8790 } = args;
+    const { files } = args;
+    const vscode_port = 8790;
 
     const result = await this.sendNotificationToVSCode({
       action: 'refresh_project',
@@ -123,21 +114,22 @@ class VSCodeNotifierServer {
     }, vscode_port);
 
     const fileInfo = files && files.length > 0 
-      ? `指定文件 (${files.length}个): ${files.join(', ')}` 
-      : '全部文件';
+      ? `specified files (${files.length}): ${files.join(', ')}` 
+      : 'all files';
 
     return {
       content: [
         {
           type: 'text',
-          text: `已通知VSCode刷新项目\n刷新范围: ${fileInfo}\n\n响应: ${result.message}`,
+          text: `VSCode project refresh notified\nRefresh scope: ${fileInfo}\n\nResponse: ${result.message}`,
         },
       ],
     };
   }
 
   private async handleGotoSymbolDefinition(args: any) {
-    const { file_path, line, character, vscode_port = 8790 } = args;
+    const { file_path, line, character } = args;
+    const vscode_port = 8790;
 
     const result = await this.sendNotificationToVSCode({
       action: 'goto_symbol_definition',
@@ -151,10 +143,10 @@ class VSCodeNotifierServer {
         {
           type: 'text',
           text: result.definitions ? 
-            `找到 ${result.definitions.length} 个定义:\n\n${result.definitions.map((def: any, index: number) => 
-              `${index + 1}. ${def.uri}\n   行: ${def.range.start.line + 1}, 列: ${def.range.start.character + 1}`
+            `Found ${result.definitions.length} definition(s):\n\n${result.definitions.map((def: any, index: number) => 
+              `${index + 1}. ${def.uri}\n   Line: ${def.range.start.line + 1}, Column: ${def.range.start.character + 1}`
             ).join('\n\n')}` : 
-            `未找到symbol定义\n\n响应: ${result.message}`,
+            `Symbol definition not found\n\nResponse: ${result.message}`,
         },
       ],
     };
@@ -173,7 +165,7 @@ class VSCodeNotifierServer {
       });
 
       if (!response.ok) {
-        throw new Error(`VSCode服务器响应错误: ${response.status} ${response.statusText}`);
+        throw new Error(`VSCode server response error: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
@@ -181,10 +173,10 @@ class VSCodeNotifierServer {
     } catch (error) {
       if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
         throw new Error(
-          `无法连接到VSCode MCP Bridge插件 (端口 ${port})。请确保:\n` +
-          '1. VSCode已安装并启用MCP Bridge插件\n' +
-          '2. 插件服务器已启动\n' +
-          '3. 端口号配置正确'
+          `Unable to connect to VSCode MCP Bridge plugin (port ${port}). Please ensure:\n` +
+          '1. VSCode has MCP Bridge plugin installed and enabled\n' +
+          '2. Plugin server is running\n' +
+          '3. Port number is configured correctly'
         );
       }
       throw error;
@@ -194,7 +186,7 @@ class VSCodeNotifierServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('VSCode MCP Bridge server 已启动');
+    console.error('VSCode MCP Bridge server started');
   }
 }
 

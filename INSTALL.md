@@ -6,7 +6,7 @@
 
 1. 进入插件目录并安装依赖：
 ```bash
-cd vscode-file-refresher
+cd vscode-mcp-bridge-extension
 npm install
 ```
 
@@ -23,7 +23,7 @@ vsce package
 
 ### 方法2：开发模式运行
 
-1. 在VSCode中打开 `vscode-file-refresher` 文件夹
+1. 在VSCode中打开 `vscode-mcp-bridge` 文件夹
 2. 按 `F5` 启动调试模式
 3. 在新窗口中测试插件功能
 

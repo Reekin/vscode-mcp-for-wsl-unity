@@ -12,7 +12,7 @@ echo "📁 项目目录: $SCRIPT_DIR"
 
 # 安装VSCode插件依赖
 echo "📦 安装VSCode插件依赖..."
-cd "$SCRIPT_DIR/@vscode-file-refresher"
+cd "$SCRIPT_DIR/@vscode-mcp-bridge"
 npm install
 npm run compile
 echo "✅ VSCode插件编译完成"
@@ -60,8 +60,8 @@ fi
 
 # 创建VSCode任务配置
 echo "📝 创建VSCode任务配置..."
-mkdir -p "$SCRIPT_DIR/@vscode-file-refresher/.vscode"
-cat > "$SCRIPT_DIR/@vscode-file-refresher/.vscode/tasks.json" << 'EOF'
+mkdir -p "$SCRIPT_DIR/@vscode-mcp-bridge/.vscode"
+cat > "$SCRIPT_DIR/@vscode-mcp-bridge/.vscode/tasks.json" << 'EOF'
 {
     "version": "2.0.0",
     "tasks": [
@@ -82,7 +82,7 @@ cat > "$SCRIPT_DIR/@vscode-file-refresher/.vscode/tasks.json" << 'EOF'
 EOF
 
 # 创建启动配置
-cat > "$SCRIPT_DIR/@vscode-file-refresher/.vscode/launch.json" << 'EOF'
+cat > "$SCRIPT_DIR/@vscode-mcp-bridge/.vscode/launch.json" << 'EOF'
 {
     "version": "0.2.0",
     "configurations": [
@@ -110,7 +110,7 @@ echo "🎉 安装完成！"
 echo ""
 echo "📋 下一步操作："
 echo "1. 在VSCode中安装插件："
-echo "   - 打开 $SCRIPT_DIR/@vscode-file-refresher"
+echo "   - 打开 $SCRIPT_DIR/@vscode-mcp-bridge"
 echo "   - 按F5启动调试模式，或手动安装插件"
 echo ""
 echo "2. 配置Claude Code MCP服务器："

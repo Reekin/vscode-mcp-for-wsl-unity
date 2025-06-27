@@ -6,7 +6,7 @@
 
 ## 解决方案
 双组件架构：
-1. **@vscode-file-refresher**: VSCode插件，提供HTTP服务器接收文件变化通知
+1. **@vscode-mcp-bridge**: VSCode插件，提供HTTP服务器接收文件变化通知
 2. **@mcp-vscode-notifier**: MCP server，为AI提供通知VSCode的工具
 
 ## 工作流程

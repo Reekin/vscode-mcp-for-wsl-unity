@@ -1,0 +1,59 @@
+{
+  "name": "vscode-mcp-bridge",
+  "displayName": "VSCode MCP Bridge",
+  "description": "将VSCode能力通过MCP工具暴露，支持文件刷新、symbol查找、语言服务器交互等功能",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "keywords": ["mcp", "vscode", "bridge", "file-refresh", "symbol-definition", "language-server"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscodeMcpBridge.start",
+        "title": "启动MCP桥接服务器"
+      },
+      {
+        "command": "vscodeMcpBridge.stop", 
+        "title": "停止MCP桥接服务器"
+      },
+      {
+        "command": "vscodeMcpBridge.refreshAll",
+        "title": "刷新所有打开的文件"
+      }
+    ],
+    "configuration": {
+      "title": "VSCode MCP Bridge",
+      "properties": {
+        "vscodeMcpBridge.port": {
+          "type": "number",
+          "default": 8790,
+          "description": "HTTP服务器端口"
+        },
+        "vscodeMcpBridge.autoStart": {
+          "type": "boolean", 
+          "default": true,
+          "description": "启动时自动开启MCP桥接服务器"
+        },
+        "vscodeMcpBridge.enableLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "启用详细日志"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}

@@ -174,6 +174,8 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
     return new Promise((resolve) => {
         const startTime = Date.now();
         let isResolved = false;
+        let diagnosticChangeCount = 0;
+        let lastChangeTime = startTime;
         
         // 设置超时
         const timeout = setTimeout(() => {
@@ -184,79 +186,65 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
             }
         }, timeoutMs);
         
-        // 监听诊断变化
+        // 监听诊断变化事件
         const disposable = vscode.languages.onDidChangeDiagnostics((event) => {
             if (isResolved) return;
             
-            // 检查是否有正在分析的诊断信息
-            let hasAnalyzing = false;
+            // 记录诊断变化
+            const currentTime = Date.now();
+            diagnosticChangeCount++;
+            lastChangeTime = currentTime;
             
+            // 检查变化的URI是否包含C#文件
+            let hasCSharpChanges = false;
             for (const uri of event.uris) {
-                const diagnostics = vscode.languages.getDiagnostics(uri);
-                for (const diagnostic of diagnostics) {
-                    const message = diagnostic.message.toLowerCase();
-                    // 检查是否包含分析中的关键词
-                    if (message.includes('analyzing') || 
-                        message.includes('loading') ||
-                        message.includes('initializing') ||
-                        message.includes('正在分析') ||
-                        message.includes('正在加载') ||
-                        message.includes('初始化中')) {
-                        hasAnalyzing = true;
-                        break;
-                    }
+                if (uri.fsPath.endsWith('.cs')) {
+                    hasCSharpChanges = true;
+                    break;
                 }
-                if (hasAnalyzing) break;
             }
             
-            // 如果没有分析中的诊断，且已经过了最小等待时间(2秒)，认为完成
-            if (!hasAnalyzing && (Date.now() - startTime) > 2000) {
+            if (hasCSharpChanges) {
+                log(`检测到C#诊断变化 (第${diagnosticChangeCount}次)`);
+            }
+            
+            // 如果已经过了足够的初始等待时间，且近期没有频繁的诊断变化，认为分析完成
+            const timeSinceStart = currentTime - startTime;
+            const timeSinceLastChange = currentTime - lastChangeTime;
+            
+            if (timeSinceStart > 8000 && timeSinceLastChange > 3000) {
                 isResolved = true;
                 clearTimeout(timeout);
                 disposable.dispose();
-                log('检测到dotnet分析完成');
+                log(`dotnet分析完成 (共检测到${diagnosticChangeCount}次诊断变化)`);
                 resolve();
             }
         });
         
-        // 最小等待时间后开始检查
+        // 给dotnet服务器足够时间启动和开始分析
         setTimeout(() => {
             if (isResolved) return;
             
-            // 如果没有任何分析中的诊断，直接完成
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (workspaceFolders) {
-                let hasAnalyzing = false;
+            log('dotnet服务器启动等待时间结束，开始监控分析进度...');
+            
+            // 如果长时间没有诊断变化，可能分析已完成或没有C#文件
+            setTimeout(() => {
+                if (isResolved) return;
                 
-                // 检查工作区中的所有诊断
-                vscode.workspace.textDocuments.forEach(doc => {
-                    if (doc.languageId === 'csharp') {
-                        const diagnostics = vscode.languages.getDiagnostics(doc.uri);
-                        for (const diagnostic of diagnostics) {
-                            const message = diagnostic.message.toLowerCase();
-                            if (message.includes('analyzing') || 
-                                message.includes('loading') ||
-                                message.includes('initializing') ||
-                                message.includes('正在分析') ||
-                                message.includes('正在加载') ||
-                                message.includes('初始化中')) {
-                                hasAnalyzing = true;
-                                break;
-                            }
-                        }
-                        if (hasAnalyzing) return;
-                    }
-                });
+                const currentTime = Date.now();
+                const timeSinceLastChange = currentTime - lastChangeTime;
                 
-                if (!hasAnalyzing) {
+                // 如果超过5秒没有诊断变化，且已经过了最小等待时间，认为完成
+                if (timeSinceLastChange > 5000 && (currentTime - startTime) > 12000) {
                     isResolved = true;
                     clearTimeout(timeout);
                     disposable.dispose();
-                    log('初始检查未发现分析中状态，认为已完成');
+                    log(`未检测到近期诊断变化，认为dotnet分析完成 (共${diagnosticChangeCount}次变化)`);
                     resolve();
                 }
-            }
-        }, 2000);
+            }, 10000);
+            
+        }, 8000); // 增加初始等待时间到8秒
     });
 }
 

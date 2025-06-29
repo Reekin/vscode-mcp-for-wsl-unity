@@ -45,7 +45,7 @@
         },
         "vscodeMcpBridge.dotnetAnalysisTimeout": {
           "type": "number",
-          "default": 18000,
+          "default": 10000,
           "description": "Maximum wait time for dotnet analysis (milliseconds)"
         }
       }

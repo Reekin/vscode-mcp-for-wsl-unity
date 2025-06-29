@@ -21,7 +21,7 @@ const TOOLS: Tool[] = [
           items: {
             type: 'string'
           },
-          description: 'List of file paths to refresh. If empty or not provided, refresh all open files',
+          description: "List of file paths to refresh. **ALWAYS** pass all the paths of code files you've changed during this session",
         },
       },
     },

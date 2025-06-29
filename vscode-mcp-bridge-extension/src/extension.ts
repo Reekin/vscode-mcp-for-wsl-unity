@@ -112,8 +112,6 @@ async function handleBridgeRequest(data: any) {
     if (action === 'refresh_project') {
         // Refresh project, support specified file list
         await refreshProject(files);
-        // Trigger diagnostic check
-        await triggerDiagnostics();
     } else if (action === 'goto_symbol_definition') {
         // View symbol definition
         return await gotoSymbolDefinition(file_path, line, character);
@@ -147,13 +145,32 @@ async function refreshFiles(filePaths: string[] = []) {
                     const resolvedPath = path.resolve(filePath);
                     const uri = vscode.Uri.file(resolvedPath);
                     
-                    // If file is not open, open it first
+                    // If file is not open, open it in the editor first
                     if (!openFiles.has(resolvedPath)) {
-                        await vscode.workspace.openTextDocument(uri);
+                        const document = await vscode.workspace.openTextDocument(uri);
+                        await vscode.window.showTextDocument(document);
                     }
                     
                     // Refresh file content
                     await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+                    
+                    // Force trigger diagnostics by briefly focusing the document
+                    try {
+                        const document = await vscode.workspace.openTextDocument(uri);
+                        await vscode.window.showTextDocument(document, { preview: false, preserveFocus: false });
+                        
+                        // Small delay to ensure the language server processes the file
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        
+                        // Trigger manual diagnostic refresh if available
+                        try {
+                            await vscode.commands.executeCommand('workbench.action.problems.focus');
+                        } catch (e) {
+                            // Ignore if command not available
+                        }
+                    } catch (diagError) {
+                        log(`Failed to trigger diagnostics for ${filePath}: ${diagError instanceof Error ? diagError.message : String(diagError)}`);
+                    }
                     
                     log(`Refreshed file: ${filePath}`);
                     
@@ -175,22 +192,37 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
         const startTime = Date.now();
         let isResolved = false;
         let diagnosticChangeCount = 0;
+        let csharpChangeCount = 0;
         let lastChangeTime = startTime;
+        let stableTimeMs = 3000; // Wait for 3 seconds of stability
         
-        // Set timeout
-        const timeout = setTimeout(() => {
+        const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
+        const fallbackDelay = config.get('dotnetAnalysisTimeout', 10000);
+        
+        const cleanup = () => {
+            if (timeout) clearTimeout(timeout);
+            if (fallbackTimeout) clearTimeout(fallbackTimeout);
+            if (disposable) disposable.dispose();
+        };
+        
+        const resolveOnce = (reason: string) => {
             if (!isResolved) {
                 isResolved = true;
-                log('Waiting for dotnet analysis completion timeout, continuing...');
+                cleanup();
+                log(`dotnet analysis ${reason} (total changes: ${diagnosticChangeCount}, C# changes: ${csharpChangeCount})`);
                 resolve();
             }
+        };
+        
+        // Main timeout
+        const timeout = setTimeout(() => {
+            resolveOnce('timeout');
         }, timeoutMs);
         
         // Listen to diagnostic change events
         const disposable = vscode.languages.onDidChangeDiagnostics((event) => {
             if (isResolved) return;
             
-            // Record diagnostic changes
             const currentTime = Date.now();
             diagnosticChangeCount++;
             
@@ -199,46 +231,32 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
             for (const uri of event.uris) {
                 if (uri.fsPath.endsWith('.cs')) {
                     hasCSharpChanges = true;
+                    csharpChangeCount++;
                     break;
                 }
             }
             
             if (hasCSharpChanges) {
-                log(`Detected C# diagnostic change (${diagnosticChangeCount} times)`);
+                log(`Detected C# diagnostic change (${csharpChangeCount}/${diagnosticChangeCount})`);
+                lastChangeTime = currentTime;
+                
+                // Reset stability timer when we get C# changes
+                if (stableTimeout) clearTimeout(stableTimeout);
+                stableTimeout = setTimeout(() => {
+                    resolveOnce('completed after stability period');
+                }, stableTimeMs);
             }
-            
-            // If enough initial wait time has passed and no recent frequent diagnostic changes, consider analysis complete
-            const timeSinceLastChange = currentTime - lastChangeTime;
-            
-            if (timeSinceLastChange > 3000) {
-                isResolved = true;
-                clearTimeout(timeout);
-                disposable.dispose();
-                log(`dotnet analysis completed (detected ${diagnosticChangeCount} diagnostic changes)`);
-                resolve();
-            }
-            lastChangeTime = currentTime;
         });
         
-        // Fallback check: if no diagnostic changes for a long time, consider analysis complete
-        const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
-        const fallbackDelay = config.get('dotnetAnalysisTimeout', 10000);
-        
-        setTimeout(() => {
-            if (isResolved) return;
-            
-            const currentTime = Date.now();
-            const timeSinceLastChange = currentTime - lastChangeTime;
-            
-            // If no diagnostic changes for more than 5 seconds and minimum wait time passed, consider complete
-            if (timeSinceLastChange > 5000 && (currentTime - startTime) > 12000) {
-                isResolved = true;
-                clearTimeout(timeout);
-                disposable.dispose();
-                log(`No recent diagnostic changes detected, considering dotnet analysis complete (${diagnosticChangeCount} changes total)`);
-                resolve();
-            }
+        // Fallback timeout for when no changes are detected
+        const fallbackTimeout = setTimeout(() => {
+            resolveOnce('completed (no changes detected)');
         }, fallbackDelay);
+        
+        // Stability timeout (will be reset on C# changes)
+        let stableTimeout: NodeJS.Timeout | null = null;
+        
+        log(`Waiting for dotnet analysis (max ${timeoutMs}ms, fallback ${fallbackDelay}ms, stability ${stableTimeMs}ms)`);
     });
 }
 
@@ -252,39 +270,7 @@ async function refreshProject(filePaths?: string[]) {
         // 2. Refresh documents (if file paths specified, only refresh these files; otherwise refresh all open documents)
         await refreshFiles(filePaths);
         
-        // 3. Trigger language servers to reload projects
-        try {
-            await vscode.commands.executeCommand('typescript.reloadProjects');
-        } catch (e) {
-            // TypeScript server may not exist, ignore error
-        }
-        
-        try {
-            await vscode.commands.executeCommand('python.reloadProjects');
-        } catch (e) {
-            // Python server may not exist, ignore error
-        }
-        
-        // Unity/C# related server reload
-        try {
-            await vscode.commands.executeCommand('omnisharp.restartServer');
-        } catch (e) {
-            // OmniSharp may not exist, ignore error
-        }
-        
-        try {
-            await vscode.commands.executeCommand('csharp.reloadProjects');
-        } catch (e) {
-            // C# server may not exist, ignore error
-        }
-        
-        try {
-            await vscode.commands.executeCommand('dotnet.restore');
-        } catch (e) {
-            // dotnet may not exist, ignore error
-        }
-        
-        // 4. Notify Unity to execute project_files_refresher
+        // 3. Notify Unity to execute project_files_refresher
         try {
             await notifyUnityProjectFilesRefresher();
         } catch (e) {
@@ -293,7 +279,7 @@ async function refreshProject(filePaths?: string[]) {
         
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // 5. Restart dotnet server and wait for analysis completion
+        // 4. Restart dotnet server and wait for analysis completion
         try {
             await vscode.commands.executeCommand('dotnet.restartServer');
             log('Restarted dotnet server, waiting for analysis completion...');
@@ -307,27 +293,6 @@ async function refreshProject(filePaths?: string[]) {
         
     } catch (error) {
         log(`Project refresh failed: ${error instanceof Error ? error.message : String(error)}`);
-    }
-}
-
-
-async function triggerDiagnostics() {
-    try {
-        // Trigger language server diagnostics
-        await vscode.commands.executeCommand('typescript.reloadProjects');
-        await vscode.commands.executeCommand('python.refreshDiagnostics');
-        
-        // Generic diagnostic refresh
-        const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor) {
-            await vscode.commands.executeCommand('editor.action.marker.next');
-            await vscode.commands.executeCommand('editor.action.marker.prev');
-        }
-        
-        log('Triggered diagnostic check');
-        
-    } catch (error) {
-        log(`Failed to trigger diagnostic check: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

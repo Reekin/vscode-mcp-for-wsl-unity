@@ -1,117 +1,107 @@
-# WSL文件监听解决方案安装指南
+# WSL File Watcher Solution Installation Guide
 
-## 1. 安装VSCode插件
+## 1. Install VSCode Extension
 
-### 方法1：本地安装开发版本
+### Method 1: Local Development Version Installation
 
-1. 进入插件目录并安装依赖：
+1. Navigate to the extension directory and install dependencies:
 ```bash
 cd vscode-mcp-bridge-extension
 npm install
 ```
 
-2. 编译插件：
+2. Compile the extension:
 ```bash
 npm run compile
 vsce package
 ```
 
-3. 在VSCode中安装：
-   - 按 `Ctrl+Shift+P` 打开命令面板
-   - 输入 `Extensions: Install from VSIX...`
-   - 选择当前目录（或打包后的.vsix文件）
+3. Install in VSCode:
+   - Press `Ctrl+Shift+P` to open the command palette
+   - Type `Extensions: Install from VSIX...`
+   - Select the generated .vsix file in the current directory
 
-### 方法2：开发模式运行
+### Method 2: Development Mode
 
-1. 在VSCode中打开 `vscode-mcp-bridge` 文件夹
-2. 按 `F5` 启动调试模式
-3. 在新窗口中测试插件功能
+1. Open the `vscode-mcp-bridge-extension` folder in VSCode
+2. Press `F5` to start debug mode
+3. Test the extension functionality in the new window
 
-## 2. 配置MCP服务器
+## 2. Configure MCP Server
 
-### 安装MCP服务器
+### Install MCP Server
 
-1. 进入MCP服务器目录：
+1. Navigate to the MCP server directory:
 ```bash
 cd mcp-vscode-notifier
 npm install
 ```
 
-2. 构建服务器：
+2. Build the server:
 ```bash
 npm run build
 ```
 
-### 配置Claude Code
+### Configure Claude Code
 
-在Claude Code配置文件中添加MCP服务器：
+Add the MCP server to your Claude Code configuration file:
 
-**Windows用户：** `%APPDATA%\Claude\claude_desktop_config.json`
-**Mac用户：** `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Linux用户：** `~/.config/claude/claude_desktop_config.json`
+**Mac users:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
+**Linux users:** `~/.config/claude/claude_desktop_config.json`
 
 ```json
 {
   "mcpServers": {
     "vscode-notifier": {
       "command": "node",
-      "args": ["/mnt/i/gpt-projects/vscode-wsl-filewatcher/mcp-vscode-notifier/dist/index.js"]
+      "args": ["/path/to/project/mcp-vscode-notifier/dist/index.js"]
     }
   }
 }
 ```
 
-**注意：** 将路径替换为你的实际项目路径！
+**Note:** Replace the path with your actual project path!
 
-## 3. 启动和测试
+## 3. Start and Test
 
-### 启动VSCode插件
+### Start VSCode Extension
 
-1. 在VSCode中按 `Ctrl+Shift+P`
-2. 输入 `File Refresher: Start Server`
-3. 确认服务器启动（端口8790）
+1. In VSCode, press `Ctrl+Shift+P`
+2. Type `File Refresher: Start Server`
+3. Confirm the server starts (port 8790)
 
-### 测试MCP工具
+## 4. Verify Installation
 
-重启Claude Code后，你可以使用以下工具：
+1. **Check VSCode extension status:**
+   - Check if "File Refresher" appears in the VSCode status bar
+   - Check the "File Refresher" channel in the output panel
 
-```bash
-# 测试刷新所有文件
-refresh_project()
-```
+2. **Test project refresh:**
+   - Modify files in your project
+   - Use the refresh_project tool to refresh the project
+   - Observe if syntax checking updates immediately
 
-## 4. 验证安装
+## 5. Troubleshooting
 
-1. **检查VSCode插件状态：**
-   - 查看VSCode状态栏是否显示"File Refresher"
-   - 检查输出面板的"File Refresher"频道
+### Common Issues
 
-2. **测试项目刷新：**
-   - 修改项目中的文件
-   - 使用refresh_project工具刷新项目
-   - 观察语法检查是否立即更新
+**Issue 1:** MCP server connection failed
+- Check if the path is correct
+- Ensure npm dependencies are installed
+- Restart Claude Code
 
-## 5. 故障排除
+**Issue 2:** VSCode extension not starting
+- Check if the extension is properly installed
+- Manually run the start command
+- Check error messages in VSCode Developer Tools
 
-### 常见问题
+**Issue 3:** Port conflict
+- Modify the port number in VSCode extension configuration
+- Also update the port parameter when calling MCP tools
 
-**问题1：** MCP服务器连接失败
-- 检查路径是否正确
-- 确认npm依赖已安装
-- 重启Claude Code
+### Debug Mode
 
-**问题2：** VSCode插件未启动
-- 检查插件是否正确安装
-- 手动运行启动命令
-- 查看VSCode开发者工具的错误信息
-
-**问题3：** 端口冲突
-- 修改VSCode插件配置中的端口号
-- 同时修改MCP工具调用时的端口参数
-
-### 调试模式
-
-启用详细日志：
-1. VSCode设置中搜索"File Refresher"
-2. 启用"Enable Logging"选项
-3. 查看输出面板的详细日志
+Enable verbose logging:
+1. Search for "File Refresher" in VSCode settings
+2. Enable the "Enable Logging" option
+3. Check detailed logs in the output panel

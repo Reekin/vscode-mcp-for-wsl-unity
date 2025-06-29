@@ -51,6 +51,7 @@ logs/
 .env.test.local
 .env.production.local
 install.sh
+.claude/
 
 # Package lock files (optional, depending on team preference)
 # package-lock.json

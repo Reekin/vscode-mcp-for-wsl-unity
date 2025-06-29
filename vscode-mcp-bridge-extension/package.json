@@ -1,7 +1,7 @@
 {
   "name": "vscode-mcp-bridge",
   "displayName": "VSCode MCP Bridge",
-  "description": "将VSCode能力通过MCP工具暴露，支持文件刷新、symbol查找、语言服务器交互等功能",
+  "description": "Expose VSCode capabilities through MCP tools, supporting file refresh, symbol lookup, language server interaction and more",
   "version": "0.1.0",
   "engines": {
     "vscode": "^1.74.0"
@@ -14,15 +14,15 @@
     "commands": [
       {
         "command": "vscodeMcpBridge.start",
-        "title": "启动MCP桥接服务器"
+        "title": "Start MCP Bridge Server"
       },
       {
         "command": "vscodeMcpBridge.stop", 
-        "title": "停止MCP桥接服务器"
+        "title": "Stop MCP Bridge Server"
       },
       {
         "command": "vscodeMcpBridge.refreshAll",
-        "title": "刷新所有打开的文件"
+        "title": "Refresh All Open Files"
       }
     ],
     "configuration": {
@@ -31,17 +31,22 @@
         "vscodeMcpBridge.port": {
           "type": "number",
           "default": 8790,
-          "description": "HTTP服务器端口"
+          "description": "HTTP server port"
         },
         "vscodeMcpBridge.autoStart": {
           "type": "boolean", 
           "default": true,
-          "description": "启动时自动开启MCP桥接服务器"
+          "description": "Automatically start MCP bridge server on startup"
         },
         "vscodeMcpBridge.enableLogging": {
           "type": "boolean",
           "default": false,
-          "description": "启用详细日志"
+          "description": "Enable detailed logging"
+        },
+        "vscodeMcpBridge.dotnetAnalysisTimeout": {
+          "type": "number",
+          "default": 18000,
+          "description": "Maximum wait time for dotnet analysis (milliseconds)"
         }
       }
     }

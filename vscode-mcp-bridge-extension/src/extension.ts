@@ -9,14 +9,14 @@ let outputChannel: vscode.OutputChannel;
 export function activate(context: vscode.ExtensionContext) {
     outputChannel = vscode.window.createOutputChannel('VSCode MCP Bridge');
     
-    // 注册命令
+    // Register commands
     const startCommand = vscode.commands.registerCommand('vscodeMcpBridge.start', startServer);
     const stopCommand = vscode.commands.registerCommand('vscodeMcpBridge.stop', stopServer);
     const refreshCommand = vscode.commands.registerCommand('vscodeMcpBridge.refreshAll', () => refreshFiles());
     
     context.subscriptions.push(startCommand, stopCommand, refreshCommand, outputChannel);
     
-    // 自动启动
+    // Auto start
     const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
     if (config.get('autoStart', true)) {
         startServer();
@@ -29,7 +29,7 @@ export function deactivate() {
 
 async function startServer() {
     if (server) {
-        log('服务器已在运行');
+        log('Server is already running');
         return;
     }
     
@@ -39,13 +39,13 @@ async function startServer() {
     server = http.createServer(handleRequest);
     
     server.listen(port, 'localhost', () => {
-        log(`文件刷新服务器启动在端口 ${port}`);
-        vscode.window.showInformationMessage(`VSCode MCP Bridge 服务器启动在端口 ${port}`);
+        log(`File refresh server started on port ${port}`);
+        vscode.window.showInformationMessage(`VSCode MCP Bridge server started on port ${port}`);
     });
     
     server.on('error', (error) => {
-        log(`服务器错误: ${error.message}`);
-        vscode.window.showErrorMessage(`VSCode MCP Bridge 服务器错误: ${error.message}`);
+        log(`Server error: ${error.message}`);
+        vscode.window.showErrorMessage(`VSCode MCP Bridge server error: ${error.message}`);
         server = null;
     });
 }
@@ -54,8 +54,8 @@ function stopServer() {
     if (server) {
         server.close();
         server = null;
-        log('服务器已停止');
-        vscode.window.showInformationMessage('VSCode MCP Bridge 服务器已停止');
+        log('Server stopped');
+        vscode.window.showInformationMessage('VSCode MCP Bridge server stopped');
     }
 }
 
@@ -81,19 +81,19 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 
                 if (data.action === 'goto_symbol_definition') {
-                    // 返回symbol definition结果
+                    // Return symbol definition result
                     res.end(JSON.stringify({ 
                         success: true, 
-                        message: result ? 'Symbol定义查找完成' : '未找到Symbol定义',
+                        message: result ? 'Symbol definition search completed' : 'Symbol definition not found',
                         definitions: result || []
                     }));
                 } else {
-                    // 返回普通操作结果
-                    res.end(JSON.stringify({ success: true, message: '操作完成' }));
+                    // Return normal operation result
+                    res.end(JSON.stringify({ success: true, message: 'Operation completed' }));
                 }
                 
             } catch (error) {
-                log(`处理请求错误: ${error}`);
+                log(`Request processing error: ${error}`);
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }));
             }
@@ -107,15 +107,15 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 async function handleBridgeRequest(data: any) {
     const { files, action, file_path, line, character } = data;
     
-    log(`收到请求: ${action}, 文件: ${files?.join(', ') || file_path || '全部'}`);
+    log(`Received request: ${action}, files: ${files?.join(', ') || file_path || 'all'}`);
     
     if (action === 'refresh_project') {
-        // 刷新项目，支持指定文件列表
+        // Refresh project, support specified file list
         await refreshProject(files);
-        // 触发诊断检查
+        // Trigger diagnostic check
         await triggerDiagnostics();
     } else if (action === 'goto_symbol_definition') {
-        // 查看symbol定义
+        // View symbol definition
         return await gotoSymbolDefinition(file_path, line, character);
     }
 }
@@ -123,7 +123,7 @@ async function handleBridgeRequest(data: any) {
 async function refreshFiles(filePaths: string[] = []) {
     try {
         if (filePaths.length === 0) {
-            // 如果没有指定文件路径，刷新所有已打开的文件
+            // If no file paths specified, refresh all open files
             const openDocuments = vscode.workspace.textDocuments;
             
             for (const document of openDocuments) {
@@ -131,14 +131,14 @@ async function refreshFiles(filePaths: string[] = []) {
                     try {
                         await vscode.commands.executeCommand('workbench.action.files.revert', document.uri);
                     } catch (error) {
-                        log(`刷新文件失败 ${document.uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
+                        log(`Failed to refresh file ${document.uri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
                     }
                 }
             }
             
-            log(`已刷新 ${openDocuments.length} 个打开的文件`);
+            log(`Refreshed ${openDocuments.length} open files`);
         } else {
-            // 刷新指定的文件列表
+            // Refresh specified file list
             const openDocuments = vscode.workspace.textDocuments;
             const openFiles = new Set(openDocuments.map(doc => doc.uri.fsPath));
             
@@ -147,26 +147,26 @@ async function refreshFiles(filePaths: string[] = []) {
                     const resolvedPath = path.resolve(filePath);
                     const uri = vscode.Uri.file(resolvedPath);
                     
-                    // 如果文件未打开，先打开它
+                    // If file is not open, open it first
                     if (!openFiles.has(resolvedPath)) {
                         await vscode.workspace.openTextDocument(uri);
                     }
                     
-                    // 刷新文件内容
+                    // Refresh file content
                     await vscode.commands.executeCommand('workbench.action.files.revert', uri);
                     
-                    log(`已刷新文件: ${filePath}`);
+                    log(`Refreshed file: ${filePath}`);
                     
                 } catch (error) {
-                    log(`刷新文件失败 ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+                    log(`Failed to refresh file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
                 }
             }
             
-            log(`已刷新 ${filePaths.length} 个指定的文件`);
+            log(`Refreshed ${filePaths.length} specified files`);
         }
         
     } catch (error) {
-        log(`刷新文件操作失败: ${error instanceof Error ? error.message : String(error)}`);
+        log(`File refresh operation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -177,25 +177,24 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
         let diagnosticChangeCount = 0;
         let lastChangeTime = startTime;
         
-        // 设置超时
+        // Set timeout
         const timeout = setTimeout(() => {
             if (!isResolved) {
                 isResolved = true;
-                log('等待dotnet分析完成超时，继续执行...');
+                log('Waiting for dotnet analysis completion timeout, continuing...');
                 resolve();
             }
         }, timeoutMs);
         
-        // 监听诊断变化事件
+        // Listen to diagnostic change events
         const disposable = vscode.languages.onDidChangeDiagnostics((event) => {
             if (isResolved) return;
             
-            // 记录诊断变化
+            // Record diagnostic changes
             const currentTime = Date.now();
             diagnosticChangeCount++;
-            lastChangeTime = currentTime;
             
-            // 检查变化的URI是否包含C#文件
+            // Check if changed URIs contain C# files
             let hasCSharpChanges = false;
             for (const uri of event.uris) {
                 if (uri.fsPath.endsWith('.cs')) {
@@ -205,152 +204,147 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
             }
             
             if (hasCSharpChanges) {
-                log(`检测到C#诊断变化 (第${diagnosticChangeCount}次)`);
+                log(`Detected C# diagnostic change (${diagnosticChangeCount} times)`);
             }
             
-            // 如果已经过了足够的初始等待时间，且近期没有频繁的诊断变化，认为分析完成
-            const timeSinceStart = currentTime - startTime;
+            // If enough initial wait time has passed and no recent frequent diagnostic changes, consider analysis complete
             const timeSinceLastChange = currentTime - lastChangeTime;
             
-            if (timeSinceStart > 8000 && timeSinceLastChange > 3000) {
+            if (timeSinceLastChange > 3000) {
                 isResolved = true;
                 clearTimeout(timeout);
                 disposable.dispose();
-                log(`dotnet分析完成 (共检测到${diagnosticChangeCount}次诊断变化)`);
+                log(`dotnet analysis completed (detected ${diagnosticChangeCount} diagnostic changes)`);
                 resolve();
             }
+            lastChangeTime = currentTime;
         });
         
-        // 给dotnet服务器足够时间启动和开始分析
+        // Fallback check: if no diagnostic changes for a long time, consider analysis complete
+        const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
+        const fallbackDelay = config.get('dotnetAnalysisTimeout', 10000);
+        
         setTimeout(() => {
             if (isResolved) return;
             
-            log('dotnet服务器启动等待时间结束，开始监控分析进度...');
+            const currentTime = Date.now();
+            const timeSinceLastChange = currentTime - lastChangeTime;
             
-            // 如果长时间没有诊断变化，可能分析已完成或没有C#文件
-            setTimeout(() => {
-                if (isResolved) return;
-                
-                const currentTime = Date.now();
-                const timeSinceLastChange = currentTime - lastChangeTime;
-                
-                // 如果超过5秒没有诊断变化，且已经过了最小等待时间，认为完成
-                if (timeSinceLastChange > 5000 && (currentTime - startTime) > 12000) {
-                    isResolved = true;
-                    clearTimeout(timeout);
-                    disposable.dispose();
-                    log(`未检测到近期诊断变化，认为dotnet分析完成 (共${diagnosticChangeCount}次变化)`);
-                    resolve();
-                }
-            }, 10000);
-            
-        }, 8000); // 增加初始等待时间到8秒
+            // If no diagnostic changes for more than 5 seconds and minimum wait time passed, consider complete
+            if (timeSinceLastChange > 5000 && (currentTime - startTime) > 12000) {
+                isResolved = true;
+                clearTimeout(timeout);
+                disposable.dispose();
+                log(`No recent diagnostic changes detected, considering dotnet analysis complete (${diagnosticChangeCount} changes total)`);
+                resolve();
+            }
+        }, fallbackDelay);
     });
 }
 
 async function refreshProject(filePaths?: string[]) {
     try {
-        log(`开始刷新项目... ${filePaths ? `指定文件: ${filePaths.join(', ')}` : '全部文件'}`);
+        log(`Starting project refresh... ${filePaths ? `specified files: ${filePaths.join(', ')}` : 'all files'}`);
         
-        // 1. 刷新文件资源管理器
+        // 1. Refresh file explorer
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
         
-        // 2. 刷新文档（如果指定了文件路径，只刷新这些文件；否则刷新所有打开的文档）
+        // 2. Refresh documents (if file paths specified, only refresh these files; otherwise refresh all open documents)
         await refreshFiles(filePaths);
         
-        // 3. 触发各语言服务器重新加载项目
+        // 3. Trigger language servers to reload projects
         try {
             await vscode.commands.executeCommand('typescript.reloadProjects');
         } catch (e) {
-            // TypeScript服务器可能不存在，忽略错误
+            // TypeScript server may not exist, ignore error
         }
         
         try {
             await vscode.commands.executeCommand('python.reloadProjects');
         } catch (e) {
-            // Python服务器可能不存在，忽略错误
+            // Python server may not exist, ignore error
         }
         
-        // Unity/C# 相关服务器重新加载
+        // Unity/C# related server reload
         try {
             await vscode.commands.executeCommand('omnisharp.restartServer');
         } catch (e) {
-            // OmniSharp可能不存在，忽略错误
+            // OmniSharp may not exist, ignore error
         }
         
         try {
             await vscode.commands.executeCommand('csharp.reloadProjects');
         } catch (e) {
-            // C#服务器可能不存在，忽略错误
+            // C# server may not exist, ignore error
         }
         
         try {
             await vscode.commands.executeCommand('dotnet.restore');
         } catch (e) {
-            // dotnet可能不存在，忽略错误
+            // dotnet may not exist, ignore error
         }
         
-        // 4. 通知Unity执行project_files_refresher
+        // 4. Notify Unity to execute project_files_refresher
         try {
             await notifyUnityProjectFilesRefresher();
         } catch (e) {
-            log(`Unity project_files_refresher通知失败: ${e instanceof Error ? e.message : String(e)}`);
+            log(`Unity project_files_refresher notification failed: ${e instanceof Error ? e.message : String(e)}`);
         }
         
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // 5. 重启dotnet服务器并等待分析完成
+        // 5. Restart dotnet server and wait for analysis completion
         try {
             await vscode.commands.executeCommand('dotnet.restartServer');
-            log('已重启dotnet服务器，等待分析完成...');
+            log('Restarted dotnet server, waiting for analysis completion...');
             await waitForDotnetAnalysisComplete();
-            log('dotnet服务器分析完成');
+            log('dotnet server analysis completed');
         } catch (e) {
-            log(`重启dotnet服务器失败: ${e instanceof Error ? e.message : String(e)}`);
+            log(`Failed to restart dotnet server: ${e instanceof Error ? e.message : String(e)}`);
         }
         
-        log('项目刷新完成');
+        log('Project refresh completed');
         
     } catch (error) {
-        log(`刷新项目失败: ${error instanceof Error ? error.message : String(error)}`);
+        log(`Project refresh failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
 
 async function triggerDiagnostics() {
     try {
-        // 触发语言服务器诊断
+        // Trigger language server diagnostics
         await vscode.commands.executeCommand('typescript.reloadProjects');
         await vscode.commands.executeCommand('python.refreshDiagnostics');
         
-        // 通用的诊断刷新
+        // Generic diagnostic refresh
         const activeEditor = vscode.window.activeTextEditor;
         if (activeEditor) {
             await vscode.commands.executeCommand('editor.action.marker.next');
             await vscode.commands.executeCommand('editor.action.marker.prev');
         }
         
-        log('已触发诊断检查');
+        log('Triggered diagnostic check');
         
     } catch (error) {
-        log(`触发诊断检查失败: ${error instanceof Error ? error.message : String(error)}`);
+        log(`Failed to trigger diagnostic check: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
 async function gotoSymbolDefinition(filePath: string, line: number, character: number): Promise<any[]> {
     try {
-        log(`开始查找symbol定义: ${filePath}:${line}:${character}`);
+        log(`Starting symbol definition search: ${filePath}:${line}:${character}`);
         
-        // 将文件路径转换为VSCode URI
+        // Convert file path to VSCode URI
         const uri = vscode.Uri.file(path.resolve(filePath));
         
-        // 确保文档已打开
+        // Ensure document is open
         await vscode.workspace.openTextDocument(uri);
         
-        // 创建位置对象 (VSCode API使用0-based行号)
+        // Create position object (VSCode API uses 0-based line numbers)
         const position = new vscode.Position(line - 1, character);
         
-        // 调用VSCode的Go to Definition API
+        // Call VSCode's Go to Definition API
         const definitions = await vscode.commands.executeCommand<vscode.LocationLink[] | vscode.Location[]>(
             'vscode.executeDefinitionProvider',
             uri,
@@ -358,22 +352,22 @@ async function gotoSymbolDefinition(filePath: string, line: number, character: n
         );
         
         if (!definitions || definitions.length === 0) {
-            log('未找到symbol定义');
+            log('Symbol definition not found');
             return [];
         }
         
-        // 转换定义结果为标准格式
+        // Convert definition results to standard format
         const results = definitions.map((def, index) => {
             let location: vscode.Location;
             let targetRange: vscode.Range;
             
-            // 处理LocationLink和Location两种类型
+            // Handle both LocationLink and Location types
             if ('targetUri' in def) {
-                // LocationLink类型
+                // LocationLink type
                 location = new vscode.Location(def.targetUri, def.targetRange);
                 targetRange = def.targetRange;
             } else {
-                // Location类型
+                // Location type
                 location = def as vscode.Location;
                 targetRange = location.range;
             }
@@ -392,15 +386,15 @@ async function gotoSymbolDefinition(filePath: string, line: number, character: n
                 }
             };
             
-            log(`定义 ${index + 1}: ${result.uri}:${result.range.start.line + 1}:${result.range.start.character + 1}`);
+            log(`Definition ${index + 1}: ${result.uri}:${result.range.start.line + 1}:${result.range.start.character + 1}`);
             return result;
         });
         
-        log(`找到 ${results.length} 个定义`);
+        log(`Found ${results.length} definitions`);
         return results;
         
     } catch (error) {
-        log(`查找symbol定义失败: ${error instanceof Error ? error.message : String(error)}`);
+        log(`Symbol definition search failed: ${error instanceof Error ? error.message : String(error)}`);
         throw error;
     }
 }
@@ -408,11 +402,11 @@ async function gotoSymbolDefinition(filePath: string, line: number, character: n
 async function notifyUnityProjectFilesRefresher() {
     const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
     const unityMcpPort = config.get('unityMcpPort', 6400);
-    const unityMcpHost = config.get('unityMcpHost', '192.168.80.1'); // WSL访问Windows的默认网关
+    const unityMcpHost = config.get('unityMcpHost', '192.168.80.1'); // WSL default gateway to access Windows
     
     return new Promise<void>((resolve, reject) => {
         const socket = new net.Socket();
-        socket.setTimeout(5000); // 5秒超时
+        socket.setTimeout(5000); // 5 second timeout
         
         const command = {
             type: 'project_files_refresher',
@@ -422,41 +416,41 @@ async function notifyUnityProjectFilesRefresher() {
         const commandJson = JSON.stringify(command);
         
         socket.connect(unityMcpPort, unityMcpHost, () => {
-            log(`已连接到Unity MCP Bridge (${unityMcpHost}:${unityMcpPort})`);
+            log(`Connected to Unity MCP Bridge (${unityMcpHost}:${unityMcpPort})`);
             socket.write(commandJson);
         });
         
         socket.on('data', (data) => {
             try {
                 const response = JSON.parse(data.toString());
-                log(`Unity MCP响应: ${JSON.stringify(response)}`);
+                log(`Unity MCP response: ${JSON.stringify(response)}`);
                 
                 if (response.status === 'success') {
-                    log('Unity project_files_refresher执行成功');
+                    log('Unity project_files_refresher executed successfully');
                     resolve();
                 } else {
-                    reject(new Error(`Unity MCP错误: ${response.error || '未知错误'}`));
+                    reject(new Error(`Unity MCP error: ${response.error || 'unknown error'}`));
                 }
             } catch (error) {
-                log(`解析Unity MCP响应失败: ${error instanceof Error ? error.message : String(error)}`);
+                log(`Failed to parse Unity MCP response: ${error instanceof Error ? error.message : String(error)}`);
                 reject(error);
             }
             socket.destroy();
         });
         
         socket.on('error', (error) => {
-            log(`Unity MCP连接错误: ${error.message}`);
+            log(`Unity MCP connection error: ${error.message}`);
             reject(error);
         });
         
         socket.on('timeout', () => {
-            log('Unity MCP连接超时');
+            log('Unity MCP connection timeout');
             socket.destroy();
-            reject(new Error('Unity MCP连接超时'));
+            reject(new Error('Unity MCP connection timeout'));
         });
         
         socket.on('close', () => {
-            log('Unity MCP连接已关闭');
+            log('Unity MCP connection closed');
         });
     });
 }

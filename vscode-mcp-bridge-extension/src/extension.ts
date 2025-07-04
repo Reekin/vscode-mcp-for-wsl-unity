@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as http from 'http';
 import * as path from 'path';
 import * as net from 'net';
+import * as fs from 'fs';
 
 let server: http.Server | null = null;
 let outputChannel: vscode.OutputChannel;
@@ -118,6 +119,8 @@ async function handleBridgeRequest(data: any) {
     }
 }
 
+// 注释掉旧版本的 refreshFiles 函数
+/*
 async function refreshFiles(filePaths: string[] = []) {
     try {
         if (filePaths.length === 0) {
@@ -184,6 +187,135 @@ async function refreshFiles(filePaths: string[] = []) {
         
     } catch (error) {
         log(`File refresh operation failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+*/
+
+// 新的轻量但有效的文件刷新和诊断版本
+async function refreshFiles(filePaths: string[] = []) {
+    try {
+        log(`🔄 Starting lightweight file refresh and diagnostics check`);
+        const startTime = Date.now();
+        
+        const targetFiles = filePaths.length > 0 ? filePaths : 
+            vscode.workspace.textDocuments
+                .filter(doc => !doc.isUntitled && doc.uri.scheme === 'file')
+                .map(doc => doc.uri.fsPath);
+        
+        log(`📋 Target files (${targetFiles.length}): ${targetFiles.join(', ')}`);
+        
+        const diagnosticResults = new Map<string, vscode.Diagnostic[]>();
+        
+        for (const filePath of targetFiles) {
+            try {
+                const resolvedPath = path.resolve(filePath);
+                const uri = vscode.Uri.file(resolvedPath);
+                
+                log(`🔍 Processing file: ${resolvedPath}`);
+                
+                // Step 1: 确保文件已打开并强制重新读取
+                let document: vscode.TextDocument;
+                try {
+                    document = await vscode.workspace.openTextDocument(uri);
+                    log(`📖 Document opened, isDirty: ${document.isDirty}, version: ${document.version}`);
+                } catch (error) {
+                    log(`❌ Failed to open document ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}`);
+                    continue;
+                }
+                
+                // Step 2: 如果文件未在VSCode中修改，强制重新读取磁盘内容
+                if (!document.isDirty) {
+                    try {
+                        // 使用 fs 模块读取文件内容以确保获取最新内容
+                        const diskContent = fs.readFileSync(resolvedPath, 'utf8');
+                        const vscodeContent = document.getText();
+                        
+                        log(`📄 File content comparison:`);
+                        log(`   - Disk content length: ${diskContent.length}`);
+                        log(`   - VSCode content length: ${vscodeContent.length}`);
+                        log(`   - Content match: ${diskContent === vscodeContent}`);
+                        
+                        if (diskContent !== vscodeContent) {
+                            log(`🔄 Content mismatch detected, forcing file reload`);
+                            await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+                            
+                            // 等待文件系统事件传播
+                            await new Promise(resolve => setTimeout(resolve, 200));
+                            
+                            // 重新获取文档
+                            document = await vscode.workspace.openTextDocument(uri);
+                            log(`📖 Document reloaded, new version: ${document.version}`);
+                        }
+                    } catch (fsError) {
+                        log(`⚠️ Failed to read file from disk: ${fsError instanceof Error ? fsError.message : String(fsError)}`);
+                    }
+                }
+                
+                // Step 3: 打印当前语言服务器看到的文件内容
+                const currentContent = document.getText();
+                const lines = currentContent.split('\n');
+                log(`📊 Total lines: ${lines.length}, Total characters: ${currentContent.length}`);
+                
+                // Step 4: 通知语言服务器文件已更改
+                try {
+                    // 触发文档更新事件
+                    await vscode.window.showTextDocument(document, { 
+                        preview: false, 
+                        preserveFocus: true,
+                        viewColumn: vscode.ViewColumn.Active 
+                    });
+                    
+                    // 等待语言服务器处理
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    log(`🔔 Language server notified of file changes`);
+                } catch (error) {
+                    log(`⚠️ Failed to notify language server: ${error instanceof Error ? error.message : String(error)}`);
+                }
+                
+                // Step 5: 获取诊断信息
+                const diagnostics = vscode.languages.getDiagnostics(uri);
+                diagnosticResults.set(resolvedPath, diagnostics);
+                
+                log(`🩺 Diagnostics for ${path.basename(resolvedPath)}:`);
+                log(`   - Total diagnostics: ${diagnostics.length}`);
+                
+                if (diagnostics.length > 0) {
+                    for (const [index, diagnostic] of diagnostics.entries()) {
+                        const severity = diagnostic.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' :
+                                       diagnostic.severity === vscode.DiagnosticSeverity.Warning ? 'WARNING' :
+                                       diagnostic.severity === vscode.DiagnosticSeverity.Information ? 'INFO' : 'HINT';
+                        
+                        log(`   [${index + 1}] ${severity} at line ${diagnostic.range.start.line + 1}: ${diagnostic.message}`);
+                    }
+                } else {
+                    log(`   ✅ No diagnostics found`);
+                }
+                
+                log(`✅ Completed processing: ${resolvedPath}`);
+                
+            } catch (error) {
+                log(`❌ Failed to process file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        
+        // 最终总结
+        const endTime = Date.now();
+        const totalErrors = Array.from(diagnosticResults.values())
+            .flat()
+            .filter(d => d.severity === vscode.DiagnosticSeverity.Error).length;
+        const totalWarnings = Array.from(diagnosticResults.values())
+            .flat()
+            .filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length;
+        
+        log(`🎯 Refresh completed in ${endTime - startTime}ms:`);
+        log(`   - Files processed: ${targetFiles.length}`);
+        log(`   - Total errors: ${totalErrors}`);
+        log(`   - Total warnings: ${totalWarnings}`);
+        log(`   - Files with diagnostics: ${Array.from(diagnosticResults.entries()).filter(([_, diags]) => diags.length > 0).length}`);
+        
+    } catch (error) {
+        log(`💥 File refresh operation failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

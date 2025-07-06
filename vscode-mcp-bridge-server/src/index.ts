@@ -23,6 +23,10 @@ const TOOLS: Tool[] = [
           },
           description: "List of file paths to refresh. **ALWAYS** pass all the paths of code files you've changed during this session",
         },
+        is_add: {
+          type: 'boolean',
+          description: 'Whether the files are newly added. When true, skips immediate diagnostic checks as they may be inaccurate for new files and relies on language server restart instead.',
+        },
       },
     },
   },
@@ -105,23 +109,26 @@ class VSCodeNotifierServer {
   }
 
   private async handleRefreshProject(args: any) {
-    const { files } = args;
+    const { files, is_add } = args;
     const vscode_port = 8790;
 
     const result = await this.sendNotificationToVSCode({
       action: 'refresh_project',
       files,
+      is_add,
     }, vscode_port);
 
     const fileInfo = files && files.length > 0 
       ? `specified files (${files.length}): ${files.join(', ')}` 
       : 'all files';
+    
+    const addInfo = is_add ? ' (new files, diagnostics skipped)' : '';
 
     return {
       content: [
         {
           type: 'text',
-          text: `VSCode project refresh notified\nRefresh scope: ${fileInfo}\n\nResponse: ${result.message}`,
+          text: `VSCode project refresh notified\nRefresh scope: ${fileInfo}${addInfo}\n\nResponse: ${result.message}`,
         },
       ],
     };

@@ -106,13 +106,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 }
 
 async function handleBridgeRequest(data: any) {
-    const { files, action, file_path, line, character } = data;
+    const { files, action, file_path, line, character, is_add } = data;
     
-    log(`Received request: ${action}, files: ${files?.join(', ') || file_path || 'all'}`);
+    log(`Received request: ${action}, files: ${files?.join(', ') || file_path || 'all'}, is_add: ${is_add}`);
     
     if (action === 'refresh_project') {
         // Refresh project, support specified file list
-        await refreshProject(files);
+        await refreshProject(files, is_add);
     } else if (action === 'goto_symbol_definition') {
         // View symbol definition
         return await gotoSymbolDefinition(file_path, line, character);
@@ -192,9 +192,9 @@ async function refreshFiles(filePaths: string[] = []) {
 */
 
 // To solve the issue where VSCode cannot promptly detect file changes made by terminal in remote WSL environment, additional manual refresh operations are needed
-async function refreshFiles(filePaths: string[] = []) {
+async function refreshFiles(filePaths: string[] = [], skipDiagnostics?: boolean) {
     try {
-        log(`Starting lightweight file refresh and diagnostics check`);
+        log(`Starting lightweight file refresh${skipDiagnostics ? ' (skipping diagnostics)' : ' and diagnostics check'}`);
         const startTime = Date.now();
         
         const targetFiles = filePaths.length > 0 ? filePaths : 
@@ -213,7 +213,22 @@ async function refreshFiles(filePaths: string[] = []) {
                 
                 log(`Processing file: ${resolvedPath}`);
                 
-                // Step 1: Ensure file is opened and force re-read
+                // Step 1: Check if file is already open and force revert if needed
+                const openDocuments = vscode.workspace.textDocuments;
+                const existingDocument = openDocuments.find(doc => doc.uri.fsPath === resolvedPath);
+                
+                if (existingDocument) {
+                    log(`File already open, forcing revert: ${resolvedPath}`);
+                    try {
+                        // Force revert the document to disk content
+                        await vscode.commands.executeCommand('workbench.action.files.revert', uri);
+                        log(`Successfully reverted file: ${resolvedPath}`);
+                    } catch (error) {
+                        log(`Failed to revert file ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}`);
+                    }
+                }
+                
+                // Step 2: Ensure file is opened and get latest content
                 let document: vscode.TextDocument;
                 try {
                     document = await vscode.workspace.openTextDocument(uri);
@@ -222,8 +237,9 @@ async function refreshFiles(filePaths: string[] = []) {
                     log(`Failed to open document ${resolvedPath}: ${error instanceof Error ? error.message : String(error)}`);
                     continue;
                 }
-                const diskContent = fs.readFileSync(resolvedPath, 'utf8');
                 
+                // Step 3: Read disk content for comparison
+                const diskContent = fs.readFileSync(resolvedPath, 'utf8');
                 
                 // Step 4: Notify language server of file changes
                 try {
@@ -247,23 +263,27 @@ async function refreshFiles(filePaths: string[] = []) {
                     log(`Failed to notify language server: ${error instanceof Error ? error.message : String(error)}`);
                 }
                 
-                // Step 5: Get diagnostic information
-                const diagnostics = vscode.languages.getDiagnostics(uri);
-                diagnosticResults.set(resolvedPath, diagnostics);
-                
-                log(`Diagnostics for ${path.basename(resolvedPath)}:`);
-                log(`   - Total diagnostics: ${diagnostics.length}`);
-                
-                if (diagnostics.length > 0) {
-                    for (const [index, diagnostic] of diagnostics.entries()) {
-                        const severity = diagnostic.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' :
-                                       diagnostic.severity === vscode.DiagnosticSeverity.Warning ? 'WARNING' :
-                                       diagnostic.severity === vscode.DiagnosticSeverity.Information ? 'INFO' : 'HINT';
-                        
-                        log(`   [${index + 1}] ${severity} at line ${diagnostic.range.start.line + 1}: ${diagnostic.message}`);
+                // Step 5: Get diagnostic information (skip if requested)
+                if (!skipDiagnostics) {
+                    const diagnostics = vscode.languages.getDiagnostics(uri);
+                    diagnosticResults.set(resolvedPath, diagnostics);
+                    
+                    log(`Diagnostics for ${path.basename(resolvedPath)}:`);
+                    log(`   - Total diagnostics: ${diagnostics.length}`);
+                    
+                    if (diagnostics.length > 0) {
+                        for (const [index, diagnostic] of diagnostics.entries()) {
+                            const severity = diagnostic.severity === vscode.DiagnosticSeverity.Error ? 'ERROR' :
+                                           diagnostic.severity === vscode.DiagnosticSeverity.Warning ? 'WARNING' :
+                                           diagnostic.severity === vscode.DiagnosticSeverity.Information ? 'INFO' : 'HINT';
+                            
+                            log(`   [${index + 1}] ${severity} at line ${diagnostic.range.start.line + 1}: ${diagnostic.message}`);
+                        }
+                    } else {
+                        log(`   No diagnostics found`);
                     }
                 } else {
-                    log(`   No diagnostics found`);
+                    log(`Skipping diagnostics check for ${path.basename(resolvedPath)} (skipDiagnostics=true)`);
                 }
                 
                 log(`Completed processing: ${resolvedPath}`);
@@ -275,18 +295,24 @@ async function refreshFiles(filePaths: string[] = []) {
         
         // Final summary
         const endTime = Date.now();
-        const totalErrors = Array.from(diagnosticResults.values())
-            .flat()
-            .filter(d => d.severity === vscode.DiagnosticSeverity.Error).length;
-        const totalWarnings = Array.from(diagnosticResults.values())
-            .flat()
-            .filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length;
         
-        log(`Refresh completed in ${endTime - startTime}ms:`);
-        log(`   - Files processed: ${targetFiles.length}`);
-        log(`   - Total errors: ${totalErrors}`);
-        log(`   - Total warnings: ${totalWarnings}`);
-        log(`   - Files with diagnostics: ${Array.from(diagnosticResults.entries()).filter(([_, diags]) => diags.length > 0).length}`);
+        if (!skipDiagnostics) {
+            const totalErrors = Array.from(diagnosticResults.values())
+                .flat()
+                .filter(d => d.severity === vscode.DiagnosticSeverity.Error).length;
+            const totalWarnings = Array.from(diagnosticResults.values())
+                .flat()
+                .filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length;
+            
+            log(`Refresh completed in ${endTime - startTime}ms:`);
+            log(`   - Files processed: ${targetFiles.length}`);
+            log(`   - Total errors: ${totalErrors}`);
+            log(`   - Total warnings: ${totalWarnings}`);
+            log(`   - Files with diagnostics: ${Array.from(diagnosticResults.entries()).filter(([_, diags]) => diags.length > 0).length}`);
+        } else {
+            log(`Refresh completed in ${endTime - startTime}ms (diagnostics skipped):`);
+            log(`   - Files processed: ${targetFiles.length}`);
+        }
         
     } catch (error) {
         log(`File refresh operation failed: ${error instanceof Error ? error.message : String(error)}`);
@@ -366,24 +392,22 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
     });
 }
 
-async function refreshProject(filePaths?: string[]) {
+async function refreshProject(filePaths?: string[], isAdd?: boolean) {
     try {
-        log(`Starting project refresh... ${filePaths ? `specified files: ${filePaths.join(', ')}` : 'all files'}`);
+        log(`Starting project refresh... ${filePaths ? `specified files: ${filePaths.join(', ')}` : 'all files'}, isAdd: ${isAdd}`);
         
-        // 1. Refresh file explorer
-        await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
-        
-        // 2. Refresh documents (if file paths specified, only refresh these files; otherwise refresh all open documents)
-        await refreshFiles(filePaths);
-        
-        // 3. Notify Unity to execute project_files_refresher
         try {
             await notifyUnityProjectFilesRefresher();
         } catch (e) {
             log(`Unity project_files_refresher notification failed: ${e instanceof Error ? e.message : String(e)}`);
         }
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
         
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await refreshFiles(filePaths, isAdd);
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
 
         // 4. Restart dotnet server and wait for analysis completion
         try {

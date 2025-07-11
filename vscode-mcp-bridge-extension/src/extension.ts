@@ -409,15 +409,21 @@ async function refreshProject(filePaths?: string[], isAdd?: boolean) {
         
         await new Promise(resolve => setTimeout(resolve, 300));
 
-        // 4. Restart dotnet server and wait for analysis completion
-        try {
-            await vscode.commands.executeCommand('dotnet.restartServer');
-            log('Restarted dotnet server, waiting for analysis completion...');
-            await waitForDotnetAnalysisComplete();
-            log('dotnet server analysis completed');
-        } catch (e) {
-            log(`Failed to restart dotnet server: ${e instanceof Error ? e.message : String(e)}`);
-        }
+        // 4. Restart dotnet server and wait for analysis completion (3秒后异步执行)
+        setTimeout(async () => {
+            try {
+                await vscode.commands.executeCommand('dotnet.restartServer');
+                log('Restarted dotnet server, waiting for analysis completion...');
+
+                if(isAdd) {
+                    await waitForDotnetAnalysisComplete();
+                }
+
+                log('dotnet server analysis completed');
+            } catch (e) {
+                log(`Failed to restart dotnet server: ${e instanceof Error ? e.message : String(e)}`);
+            }
+        }, 3000);
         
         log('Project refresh completed');
         
@@ -497,7 +503,7 @@ async function gotoSymbolDefinition(filePath: string, line: number, character: n
 async function notifyUnityProjectFilesRefresher() {
     const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
     const unityMcpPort = config.get('unityMcpPort', 6400);
-    const unityMcpHost = config.get('unityMcpHost', '192.168.80.1'); // WSL default gateway to access Windows
+    const unityMcpHost = config.get('unityMcpHost', await getHostIp()); // WSL default gateway to access Windows
     
     return new Promise<void>((resolve, reject) => {
         const socket = new net.Socket();
@@ -548,6 +554,33 @@ async function notifyUnityProjectFilesRefresher() {
             log('Unity MCP connection closed');
         });
     });
+}
+
+async function getHostIp(): Promise<string> {
+  // process.platform 在 WSL 中通常是 'linux'
+  if (process.platform !== 'linux') {
+    return 'localhost';
+  }
+  
+  const resolvConfPath = '/etc/resolv.conf';
+
+  try {
+    const fileContent = fs.readFileSync(resolvConfPath, 'utf8');
+    const lines = fileContent.split('\n');
+    
+    // 寻找以 "nameserver" 开头的那一行
+    const nameserverLine = lines.find((line: string) => line.trim().startsWith('nameserver'));
+
+    if (nameserverLine) {
+      const ipAddress = nameserverLine.trim().split(/\s+/)[1];
+      return ipAddress;
+    }
+
+    return 'localhost';
+  } catch (error) {
+    console.error(`读取或解析 ${resolvConfPath} 时出错:`, error);
+    return 'localhost';
+  }
 }
 
 function log(message: string) {

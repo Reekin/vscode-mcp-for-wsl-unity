@@ -60,6 +60,46 @@ function stopServer() {
     }
 }
 
+function formatDiagnosticResults(diagnosticResults: Map<string, vscode.Diagnostic[]> | null): any {
+    if (!diagnosticResults) {
+        return null;
+    }
+    
+    const formattedResults: any = {};
+    const summary = {
+        totalErrors: 0,
+        totalWarnings: 0,
+        filesWithIssues: 0
+    };
+    
+    for (const [filePath, diagnostics] of diagnosticResults) {
+        const errorsAndWarnings = diagnostics.filter(d => 
+            d.severity === vscode.DiagnosticSeverity.Error || 
+            d.severity === vscode.DiagnosticSeverity.Warning
+        );
+        
+        if (errorsAndWarnings.length > 0) {
+            summary.filesWithIssues++;
+            formattedResults[filePath] = errorsAndWarnings.map(diagnostic => ({
+                line: diagnostic.range.start.line + 1,
+                column: diagnostic.range.start.character + 1,
+                severity: diagnostic.severity === vscode.DiagnosticSeverity.Error ? 'error' : 'warning',
+                message: diagnostic.message,
+                source: diagnostic.source || 'unknown'
+            }));
+            
+            // Update counters
+            summary.totalErrors += errorsAndWarnings.filter(d => d.severity === vscode.DiagnosticSeverity.Error).length;
+            summary.totalWarnings += errorsAndWarnings.filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length;
+        }
+    }
+    
+    return {
+        summary,
+        diagnostics: formattedResults
+    };
+}
+
 async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -88,6 +128,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
                         message: result ? 'Symbol definition search completed' : 'Symbol definition not found',
                         definitions: result || []
                     }));
+                } else if (data.action === 'refresh_project') {
+                    // Return refresh project result with diagnostics
+                    const formattedDiagnostics = formatDiagnosticResults(result);
+                    res.end(JSON.stringify({ 
+                        success: true, 
+                        message: 'Project refresh completed',
+                        diagnostics: formattedDiagnostics
+                    }));
                 } else {
                     // Return normal operation result
                     res.end(JSON.stringify({ success: true, message: 'Operation completed' }));
@@ -112,7 +160,8 @@ async function handleBridgeRequest(data: any) {
     
     if (action === 'refresh_project') {
         // Refresh project, support specified file list
-        await refreshProject(files, is_add);
+        const diagnosticResults = await refreshProject(files, is_add);
+        return diagnosticResults;
     } else if (action === 'goto_symbol_definition') {
         // View symbol definition
         return await gotoSymbolDefinition(file_path, line, character);
@@ -192,7 +241,7 @@ async function refreshFiles(filePaths: string[] = []) {
 */
 
 // To solve the issue where VSCode cannot promptly detect file changes made by terminal in remote WSL environment, additional manual refresh operations are needed
-async function refreshFiles(filePaths: string[] = [], skipDiagnostics?: boolean) {
+async function refreshFiles(filePaths: string[] = [], skipDiagnostics?: boolean): Promise<Map<string, vscode.Diagnostic[]> | null> {
     try {
         log(`Starting lightweight file refresh${skipDiagnostics ? ' (skipping diagnostics)' : ' and diagnostics check'}`);
         const startTime = Date.now();
@@ -314,8 +363,12 @@ async function refreshFiles(filePaths: string[] = [], skipDiagnostics?: boolean)
             log(`   - Files processed: ${targetFiles.length}`);
         }
         
+        // Return diagnostic results if they were collected
+        return skipDiagnostics ? null : diagnosticResults;
+        
     } catch (error) {
         log(`File refresh operation failed: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
     }
 }
 
@@ -392,7 +445,7 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
     });
 }
 
-async function refreshProject(filePaths?: string[], isAdd?: boolean) {
+async function refreshProject(filePaths?: string[], isAdd?: boolean): Promise<Map<string, vscode.Diagnostic[]> | null> {
     try {
         log(`Starting project refresh... ${filePaths ? `specified files: ${filePaths.join(', ')}` : 'all files'}, isAdd: ${isAdd}`);
         
@@ -405,30 +458,32 @@ async function refreshProject(filePaths?: string[], isAdd?: boolean) {
 
         await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
         
-        await refreshFiles(filePaths, isAdd);
+        const diagnosticResults = await refreshFiles(filePaths, isAdd);
         
         await new Promise(resolve => setTimeout(resolve, 300));
 
-        // 4. Restart dotnet server and wait for analysis completion (3秒后异步执行)
-        setTimeout(async () => {
-            try {
-                await vscode.commands.executeCommand('dotnet.restartServer');
-                log('Restarted dotnet server, waiting for analysis completion...');
+        if(isAdd) {
+            // 4. Restart dotnet server and wait for analysis completion
+            setTimeout(async () => {
+                try {
+                    await vscode.commands.executeCommand('dotnet.restartServer');
+                    log('Restarted dotnet server, waiting for analysis completion...');
 
-                if(isAdd) {
-                    await waitForDotnetAnalysisComplete();
+                        await waitForDotnetAnalysisComplete();
+
+                    log('dotnet server analysis completed');
+                } catch (e) {
+                    log(`Failed to restart dotnet server: ${e instanceof Error ? e.message : String(e)}`);
                 }
-
-                log('dotnet server analysis completed');
-            } catch (e) {
-                log(`Failed to restart dotnet server: ${e instanceof Error ? e.message : String(e)}`);
-            }
-        }, 3000);
+            }, 3000);
+        }
         
         log('Project refresh completed');
+        return diagnosticResults;
         
     } catch (error) {
         log(`Project refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+        return null;
     }
 }
 
@@ -503,7 +558,9 @@ async function gotoSymbolDefinition(filePath: string, line: number, character: n
 async function notifyUnityProjectFilesRefresher() {
     const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
     const unityMcpPort = config.get('unityMcpPort', 6400);
-    const unityMcpHost = config.get('unityMcpHost', await getHostIp()); // WSL default gateway to access Windows
+    const hostIP = await getHostIp();
+    log(`Default HostIp is ${hostIP}`);
+    const unityMcpHost = config.get('unityMcpHost', hostIP); // WSL default gateway to access Windows
     
     return new Promise<void>((resolve, reject) => {
         const socket = new net.Socket();

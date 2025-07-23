@@ -153,7 +153,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     }
 }
 
-async function handleBridgeRequest(data: any) {
+async function handleBridgeRequest(data: any): Promise<any> {
     const { files, action, file_path, line, character, is_add } = data;
     
     log(`Received request: ${action}, files: ${files?.join(', ') || file_path || 'all'}, is_add: ${is_add}`);
@@ -166,6 +166,8 @@ async function handleBridgeRequest(data: any) {
         // View symbol definition
         return await gotoSymbolDefinition(file_path, line, character);
     }
+    
+    return null;
 }
 
 // Commented out old version of refreshFiles function
@@ -378,7 +380,6 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
         let isResolved = false;
         let diagnosticChangeCount = 0;
         let csharpChangeCount = 0;
-        let lastChangeTime = startTime;
         let stableTimeMs = 3000; // Wait for 3 seconds of stability
         
         const config = vscode.workspace.getConfiguration('vscodeMcpBridge');
@@ -423,7 +424,6 @@ async function waitForDotnetAnalysisComplete(timeoutMs: number = 30000): Promise
             
             if (hasCSharpChanges) {
                 log(`Detected C# diagnostic change (${csharpChangeCount}/${diagnosticChangeCount})`);
-                lastChangeTime = currentTime;
                 
                 // Reset stability timer when we get C# changes
                 if (stableTimeout) clearTimeout(stableTimeout);
